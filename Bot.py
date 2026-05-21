@@ -306,7 +306,7 @@ class CategoriaView(discord.ui.View):
         self.add_item(CategoriaSelect(filename, sha256_hash, secure_hash, attachment_url))
 
 # ============================================================================
-# MODAL PARA HASH MANUAL (GUARDA HASH ORIGINAL)
+# MODAL PARA HASH MANUAL (GUARDA HASH ORIGINAL) - CORREGIDO CON ASYNC TO_THREAD
 # ============================================================================
 class ManualHashBanModal(discord.ui.Modal, title="🔑 Banear por Hash Manual"):
     raw_hash = discord.ui.TextInput(label="Hash SHA-256 Original", placeholder="Introduce el hash SHA-256 del binario (64 caracteres)", max_length=64, min_length=64)
@@ -327,7 +327,8 @@ class ManualHashBanModal(discord.ui.Modal, title="🔑 Banear por Hash Manual"):
         }
         firebase_path = f"{FIREBASE_URL}/cheat_signatures/{sha256_hash}.json"
         try:
-            response = requests.put(firebase_path, json=body)
+            # ----- CORRECCIÓN: Usamos asyncio.to_thread para no bloquear -----
+            response = await asyncio.to_thread(requests.put, firebase_path, json=body)
             if response.status_code == 200:
                 embed = discord.Embed(title="🛡️ Firma Registrada Correctamente", description="Se ha subido la firma del cheat a Firebase (hash original).", color=discord.Color.green())
                 embed.add_field(name="Cheat", value=self.cheat_name.value, inline=True)
@@ -401,7 +402,7 @@ def get_auto_download_info(url: str):
     return None
 
 # ============================================================================
-# VISTA DE APROBACIÓN DE CHEAT (BOTONES VERDE, AZUL, ROJO)
+# VISTA DE APROBACIÓN DE CHEAT (BOTONES VERDE, AZUL, ROJO) CON LOGS DE DEPURACIÓN
 # ============================================================================
 class CheatApprovalView(discord.ui.View):
     def __init__(self, filename: str, raw_hash: str, secure_hash: str, source_url: str, cheat_name: str):
@@ -427,6 +428,7 @@ class CheatApprovalView(discord.ui.View):
 
     @discord.ui.button(label="🟢 Aprobar y Banear", style=discord.ButtonStyle.green, custom_id="approve_cheat")
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        print(f"[DEBUG] Botón 'Aprobar' pulsado por {interaction.user} (admin: {interaction.user.guild_permissions.administrator})")
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("🚫 **No tienes permisos.** Solo los administradores pueden aprobar o banear cheats.", ephemeral=True)
             await interaction.channel.send(f"⚠️ **Intento no autorizado:** El usuario {interaction.user.mention} ha intentado aprobar el cheat **{self.cheat_name}** sin ser administrador.")
@@ -465,11 +467,13 @@ class CheatApprovalView(discord.ui.View):
 
     @discord.ui.button(label="📝 Registrar Info", style=discord.ButtonStyle.blurple, custom_id="teach_bot")
     async def teach(self, interaction: discord.Interaction, button: discord.ui.Button):
+        print(f"[DEBUG] Botón 'Registrar Info' pulsado por {interaction.user} para cheat '{self.cheat_name}'")
         modal = CheatRegistrationModal(self.cheat_name)
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="🔴 Denegar", style=discord.ButtonStyle.red, custom_id="deny_cheat")
     async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        print(f"[DEBUG] Botón 'Denegar' pulsado por {interaction.user} (admin: {interaction.user.guild_permissions.administrator})")
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("🚫 **No tienes permisos.** Solo los administradores pueden denegar cheats.", ephemeral=True)
             await interaction.channel.send(f"⚠️ **Intento no autorizado:** El usuario {interaction.user.mention} ha intentado denegar el cheat **{self.cheat_name}** sin ser administrador.")
