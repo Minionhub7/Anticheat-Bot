@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import hashlib
 import requests
 import os
@@ -12,17 +12,26 @@ import sys
 import threading
 from flask import Flask
 import aiohttp
+from datetime import datetime, timedelta, timezone
+from googleapiclient.discovery import build
+
+# ---------- CARGAR VARIABLES DE ENTORNO DESDE .env ----------
+from dotenv import load_dotenv
+load_dotenv()  # Busca un archivo .env en la misma carpeta y carga las variables
 
 # ============================================================================
 # CONFIGURACIÓN DEL BOT Y FIREBASE
 # ============================================================================
 TOKEN = os.environ.get("DISCORD_TOKEN")  # Leer desde variable de entorno (seguro)
 FIREBASE_URL = os.environ.get("FIREBASE_URL", "https://anticheat-93e49-default-rtdb.europe-west1.firebasedatabase.app/").rstrip("/")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "learned_cheats.json")  # Backup local
 
-CANAL_AUTORIZADO_ID = None  
+CANAL_AUTORIZADO_ID = None
+CANAL_NUEVOS_CHEATS = "📄nuevos-cheats-dbd"                     
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")            
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -127,6 +136,30 @@ def automatically_learn_cheat(key: str, name: str, game: str, website: str, lice
         }
         save_learned_cheats(learned_data)
         print(f"[Autopilot Aprendizaje] Nuevo cheat registrado en Firebase: {name} (categoría: {category})")
+
+# ============================================================================
+# FUNCIÓN PARA SUBIR HASH A cheat_signatures (NUEVA)
+# ============================================================================
+def upload_hash_to_firebase(sha256_hash: str, filename: str, uploaded_by: str = "Sistema (registro automático)"):
+    """Sube el hash original (sin encriptar) a la colección cheat_signatures"""
+    url = f"{FIREBASE_URL}/cheat_signatures/{sha256_hash}.json"
+    body = {
+        "hash": sha256_hash,
+        "originalName": filename,
+        "uploadedBy": uploaded_by,
+        "banned": True
+    }
+    try:
+        response = requests.put(url, json=body, timeout=10)
+        if response.status_code == 200:
+            print(f"[Hash] Subido correctamente: {sha256_hash}")
+            return True
+        else:
+            print(f"[Hash] Error {response.status_code} al subir {sha256_hash}")
+            return False
+    except Exception as e:
+        print(f"[Hash] Excepción: {e}")
+        return False
 
 # ============================================================================
 # ENCRIPTACIÓN DE HASH (SOLO PARA MOSTRAR)
@@ -247,7 +280,7 @@ def search_cheat_intel(name: str):
     }
 
 # ============================================================================
-# MODAL PARA REGISTRAR CHEAT (APRENDIZAJE) - CON 5 CAMPOS (CORREGIDO)
+# MODAL PARA REGISTRAR CHEAT (APRENDIZAJE) - CON 5 CAMPOS Y SUBIDA DE HASH
 # ============================================================================
 class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Cheat"):
     cheat_name = discord.ui.TextInput(label="Nombre del Cheat", placeholder="Ej: Midnight", max_length=50)
@@ -256,11 +289,13 @@ class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Ch
     pago_gratis = discord.ui.TextInput(label="¿Es de pago o gratuito?", placeholder="Ej: De Pago / Gratuito / Suscripción", max_length=30)
     descripcion = discord.ui.TextInput(label="Descripción / Características", style=discord.TextStyle.paragraph, placeholder="Ej: Aimbot con bypass legítimo...", max_length=300)
 
-    def __init__(self, default_name: str = "", default_category: str = "cheat"):
+    def __init__(self, default_name: str = "", default_category: str = "cheat", file_hash: str = None, filename: str = None):
         super().__init__()
         if default_name:
             self.cheat_name.default = default_name
-        self.categoria = default_category  # Guardamos la categoría como atributo
+        self.categoria = default_category      # Guardamos la categoría como atributo
+        self.file_hash = file_hash             # Hash del archivo (si se subió uno)
+        self.filename = filename               # Nombre original del archivo
 
     async def on_submit(self, interaction: discord.Interaction):
         learned_data = load_learned_cheats()
@@ -274,26 +309,148 @@ class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Ch
             "category": self.categoria
         }
         save_learned_cheats(learned_data)
+
+        # --- Subir el hash a cheat_signatures si se proporcionó ---
+        if self.file_hash:
+            upload_hash_to_firebase(self.file_hash, self.filename, uploaded_by=f"Registro por {interaction.user.name}")
+
         embed = discord.Embed(
             title="🧠 ¡Inteligencia Aprendida y Registrada con Éxito!",
-            description=f"He registrado el **{self.cheat_name.value}** (categoría: {self.categoria}) en mi base de datos de aprendizaje permanente.",
+            description=f"He registrado el **{self.cheat_name.value}** (categoría: {self.categoria}).\n" + 
+                        ("Hash SHA‑256 guardado en `cheat_signatures`." if self.file_hash else ""),
             color=discord.Color.green()
         )
         embed.add_field(name="🎮 Videojuego", value=self.juego.value, inline=True)
         embed.add_field(name="🌐 Sitio Web", value=self.website.value, inline=True)
         embed.add_field(name="🏷️ Licencia / Precio", value=self.pago_gratis.value, inline=True)
         embed.add_field(name="📝 Descripción", value=self.descripcion.value, inline=False)
+        if self.file_hash:
+            embed.add_field(name="🔑 Hash SHA-256", value=f"`{self.file_hash}`", inline=False)
         embed.set_footer(text="A partir de ahora, reconoceré este cheat al instante.")
         await interaction.response.send_message(embed=embed)
+
+
+# ============================================================================
+# FUNCIÓN PARA SUBIR HASH A FIREBASE (cheat_signatures)
+# ============================================================================
+def upload_hash_to_firebase(sha256_hash: str, filename: str, uploaded_by: str = "Sistema"):
+    """Sube el hash original (sin encriptar) a la colección cheat_signatures"""
+    url = f"{FIREBASE_URL}/cheat_signatures/{sha256_hash}.json"
+    body = {
+        "hash": sha256_hash,
+        "originalName": filename,
+        "uploadedBy": uploaded_by,
+        "banned": True
+    }
+    try:
+        r = requests.put(url, json=body, timeout=10)
+        if r.status_code == 200:
+            print(f"[Hash] Subido correctamente: {sha256_hash}")
+            return True
+        else:
+            print(f"[Hash] Error {r.status_code} al subir {sha256_hash}")
+            return False
+    except Exception as e:
+        print(f"[Hash] Excepción: {e}")
+        return False
+    
+# ============================================================================
+# BÚSQUEDA DE VÍDEOS EN YOUTUBE
+# ============================================================================
+@bot.command(name="new")
+async def new_cheats(ctx):
+    """Busca vídeos de nuevos cheats en YouTube y envía al canal designado"""
+    if not YOUTUBE_API_KEY:
+        await ctx.send("❌ API Key de YouTube no configurada.")
+        return
+    await ctx.send("🔎 Buscando vídeos recientes de cheats para Dead by Daylight...")
+    await buscar_y_enviar(ctx.channel)
+
+async def buscar_y_enviar(channel):
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _buscar_y_enviar_sync, channel)
+
+def _buscar_y_enviar_sync(channel):
+    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+    published_after = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat("T") + "Z"
+    request = youtube.search().list(
+        part="snippet",
+        q="Dead by Daylight cheat hack",
+        type="video",
+        order="date",
+        publishedAfter=published_after,
+        maxResults=10
+    )
+    response = request.execute()
+    items = response.get("items", [])
+    if not items:
+        asyncio.run_coroutine_threadsafe(channel.send("📭 No se encontraron vídeos nuevos."), bot.loop)
+        return
+
+    history_file = "youtube_notified.json"
+    notified = set()
+    if os.path.exists(history_file):
+        with open(history_file, "r") as f:
+            notified = set(json.load(f))
+
+    nuevos = []
+    for video in items:
+        video_id = video["id"]["videoId"]
+        if video_id in notified:
+            continue
+        title = video["snippet"]["title"].lower()
+        if any(kw in title for kw in ["cheat", "hack", "esp", "wallhack", "speed hack", "free hack", "undetected"]):
+            nuevos.append(video)
+            notified.add(video_id)
+
+    if not nuevos:
+        asyncio.run_coroutine_threadsafe(channel.send("🔍 Ningún vídeo coincidió con el filtro."), bot.loop)
+    else:
+        for video in nuevos:
+            snippet = video["snippet"]
+            embed = discord.Embed(
+                title=f"🎥 {snippet['title'][:256]}",
+                description="Posible nuevo cheat para **Dead by Daylight**",
+                url=f"https://www.youtube.com/watch?v={video['id']['videoId']}",
+                color=discord.Color.red()
+            )
+            embed.set_author(name=snippet["channelTitle"])
+            embed.set_thumbnail(url=snippet["thumbnails"]["high"]["url"])
+            embed.add_field(name="📅 Publicado", value=snippet["publishedAt"][:10], inline=True)
+            embed.set_footer(text="VanguardX - Alerta de nuevos cheats")
+            asyncio.run_coroutine_threadsafe(channel.send(embed=embed), bot.loop)
+
+    with open(history_file, "w") as f:
+        json.dump(list(notified), f)
+
+# ============================================================================
+# TAREA DIARIA AUTOMÁTICA
+# ============================================================================
+@tasks.loop(hours=24)
+async def daily_youtube_search():
+    if not YOUTUBE_API_KEY:
+        return
+    channel = None
+    for guild in bot.guilds:
+        for ch in guild.text_channels:
+            if ch.name == CANAL_NUEVOS_CHEATS:
+                channel = ch
+                break
+        if channel:
+            break
+    if not channel:
+        print(f"[YouTube] Canal '{CANAL_NUEVOS_CHEATS}' no encontrado.")
+        return
+    await buscar_y_enviar(channel)
+
 
 # ============================================================================
 # VISTA PARA SELECCIONAR CATEGORÍA (DESPLEGABLE) ANTES DE REGISTRAR
 # ============================================================================
 class CategoriaSelect(discord.ui.Select):
-    def __init__(self, filename: str, sha256_hash: str, secure_hash: str, attachment_url: str):
+    def __init__(self, filename: str, sha256_hash: str, attachment_url: str):
         self.filename = filename
         self.sha256_hash = sha256_hash
-        self.secure_hash = secure_hash
         self.attachment_url = attachment_url
         options = [
             discord.SelectOption(label="Cheat", description="Software de trampas para ventajas en el juego", emoji="🎮"),
@@ -305,14 +462,19 @@ class CategoriaSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         categoria = self.values[0].lower()
-        modal = CheatRegistrationModal(default_name=self.filename.split('.')[0].capitalize(), default_category=categoria)
+        # IMPORTANTE: pasar también el hash y el nombre del archivo
+        modal = CheatRegistrationModal(
+            default_name=self.filename.split('.')[0].capitalize(),
+            default_category=categoria,
+            file_hash=self.sha256_hash,
+            filename=self.filename
+        )
         await interaction.response.send_modal(modal)
 
 class CategoriaView(discord.ui.View):
-    def __init__(self, filename: str, sha256_hash: str, secure_hash: str, attachment_url: str):
+    def __init__(self, filename: str, sha256_hash: str, attachment_url: str):
         super().__init__(timeout=60)
-        self.add_item(CategoriaSelect(filename, sha256_hash, secure_hash, attachment_url))
-
+        self.add_item(CategoriaSelect(filename, sha256_hash, attachment_url))
 # ============================================================================
 # MODAL PARA HASH MANUAL (GUARDA HASH ORIGINAL) - CORREGIDO CON ASYNC TO_THREAD
 # ============================================================================
@@ -639,6 +801,17 @@ async def añadir_manual(ctx):
         return
     view = RegisterNewCheatOnlyView()
     await ctx.send("🧠 **Formulario de Aprendizaje de VanguardX**\nHaz clic en el botón de abajo para abrir el panel e ingresar los detalles del cheat.", view=view)
+
+@bot.event
+async def on_ready():
+    print(f"✅ Bot conectado como {bot.user}")
+    # ... (tu código existente de on_ready)
+    
+    # <-- AÑADIR ESTAS DOS LÍNEAS AL FINAL
+    if YOUTUBE_API_KEY and not daily_youtube_search.is_running():
+        daily_youtube_search.start()
+        print("[YouTube] Tarea diaria iniciada.")
+
 
 @bot.command(name="estadisticas", aliases=["stats", "resumen"])
 async def estadisticas(ctx):
