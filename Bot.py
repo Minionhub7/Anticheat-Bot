@@ -1,0 +1,983 @@
+import discord
+from discord.ext import commands
+import hashlib
+import requests
+import os
+import json
+import urllib.parse
+import re
+import asyncio
+import time
+import sys
+import threading
+from flask import Flask
+import aiohttp
+
+# ============================================================================
+# CONFIGURACIÓN DEL BOT Y FIREBASE
+# ============================================================================
+TOKEN = os.environ.get("DISCORD_TOKEN")  # ¡CÁMBIALO POR TU TOKEN VÁLIDO!
+FIREBASE_URL = os.environ.get("FIREBASE_URL", "https://anticheat-93e49-default-rtdb.europe-west1.firebasedatabase.app/").rstrip("/")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "learned_cheats.json")  # Backup local
+
+CANAL_AUTORIZADO_ID = None  
+
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+# -------------------------------------------------------------------
+# BASE DE DATOS ESTÁTICA DE CHEATS FAMOSOS (ampliada con injectores/spoofers)
+# -------------------------------------------------------------------
+FAMOUS_CHEATS = {
+    "neverlose": {"game": "CS2 / CS:GO", "website": "neverlose.cc", "type": "De Pago 💰", "description": "Cheat comercial de gama alta con Aimbot, ESP, Ragebot y scripts Lua.", "category": "cheat"},
+    "osiris": {"game": "CS2 / CS:GO / CS1.6", "website": "github.com/danielkrupinski/Osiris", "type": "Gratuito 🟢", "description": "Cheat de código abierto muy popular y modificable.", "category": "cheat"},
+    "midnight": {"game": "CS2 / GTA V", "website": "midnight.im", "type": "De Pago 💰", "description": "Cheat comercial enfocado en bypasses legítimos e integridad visual.", "category": "cheat"},
+    "aimware": {"game": "CS2 / TF2 / PUBG", "website": "aimware.net", "type": "De Pago 💰", "description": "Uno de los multihacks comerciales más antiguos y conocidos de la escena.", "category": "cheat"},
+    "iniuria": {"game": "CS2 / CS:GO", "website": "iniuria.us", "type": "De Pago 💰", "description": "Cheat premium de seguridad extrema especializado en jugar seguro en ligas oficiales.", "category": "cheat"},
+    "skeet": {"game": "CS2 / CS:GO", "website": "gamesense.pub", "type": "De Pago 💰", "description": "Cheat privado por invitación de altísimo rendimiento para servidores HvH.", "category": "cheat"},
+    "gamesense": {"game": "CS2 / CS:GO", "website": "gamesense.pub", "type": "De Pago 💰", "description": "Cheat privado por invitación de altísimo rendimiento para servidores HvH.", "category": "cheat"},
+    "ezfrags": {"game": "CS:GO", "website": "ezfrags.co.uk", "type": "Gratuito 🟢", "description": "Cheat público gratuito muy conocido e inestable (fácil de detectar).", "category": "cheat"},
+    "orbit": {"game": "Valorant", "website": "orbitcheats.com", "type": "De Pago 💰", "description": "Software de asistencia de apuntado por color (colorbot) con bypass de Vanguard.", "category": "cheat"},
+    "vynix": {"game": "Valorant", "website": "vynix.gg", "type": "De Pago 💰", "description": "Cheat de Valorant con soporte ESP y asistencia menor.", "category": "cheat"},
+    "synapse x": {"game": "Roblox", "website": "x.synapse.to", "type": "De Pago 💰", "description": "El ejecutor de scripts de nivel 7 más famoso de la historia de Roblox.", "category": "injector"},
+    "krnl": {"game": "Roblox", "website": "krnl.place", "type": "Gratuito 🟢", "description": "Ejecutor de scripts gratuito muy potente para inyectar scripts complejos.", "category": "injector"},
+    "fluxus": {"game": "Roblox", "website": "fluxteam.net", "type": "Gratuito 🟢", "description": "Ejecutor de scripts multiplataforma (Android y Windows) muy estable.", "category": "injector"},
+    "wurst": {"game": "Minecraft", "website": "wurstclient.net", "type": "Gratuito 🟢", "description": "Cliente de hacks gratuito con Killaura, X-Ray y vuelo.", "category": "cheat"},
+    "impact": {"game": "Minecraft", "website": "impactclient.eu", "type": "Gratuito 🟢", "description": "Cliente de hacks clásico optimizado para servidores de anarquía (2b2t).", "category": "cheat"},
+    "vape": {"game": "Minecraft", "website": "vape.gg", "type": "De Pago 💰", "description": "Cliente fantasma inyectable comercial de máxima discreción para servidores competitivos.", "category": "cheat"},
+    "stand": {"game": "GTA V", "website": "stand.gg", "type": "De Pago 💰", "description": "El Mod Menu comercial más avanzado e indetectable de GTA Online actualmente.", "category": "cheat"},
+    "2take1": {"game": "GTA V", "website": "2take1.menu", "type": "De Pago 💰", "description": "Mod Menu comercial premium extremadamente caro con funciones de colapso de salas.", "category": "cheat"},
+    "kiddions": {"game": "GTA V", "website": "unknowncheats.me", "type": "Gratuito 🟢", "description": "Menú externo gratuito basado en lectura de memoria, legendario y muy seguro.", "category": "cheat"},
+    "bgx": {"game": "League of Legends", "website": "bgx.gg", "type": "De Pago 💰", "description": "Script comercial para League of Legends con auto-esquivar (evade) y combos automáticos.", "category": "cheat"},
+    "fatality": {"game": "CS2", "website": "fatality.win", "type": "De Pago 💰", "description": "Cheat comercial privado enfocado en partidas Ragebot y HvH en CS2.", "category": "cheat"},
+    "primordial": {"game": "CS2", "website": "primordial.dev", "type": "De Pago 💰", "description": "Software privado premium de CS2 con sistema de scripting avanzado y gran estabilidad.", "category": "cheat"},
+    "fanta": {"game": "CS2 / CS:GO", "website": "fanta.club", "type": "De Pago 💰", "description": "Cheat privado de CS2 enfocado en configuraciones legítimas y bypass selectivo.", "category": "cheat"},
+    "clutch-solution": {"game": "Fortnite / Apex", "website": "clutch-solution.com", "type": "De Pago 💰", "description": "Cheat de nivel kernel que incluye radar web y ESP externo seguro.", "category": "cheat"},
+    "cheat happens": {"game": "Fortnite / Singleplayer", "website": "cheathappens.com", "type": "De Pago 💰", "description": "Plataforma premium con entrenadores y modificaciones de memoria de nivel usuario.", "category": "cheat"},
+    "cronus zen": {"game": "Fortnite / Consolas", "website": "cronusmax.com", "type": "De Pago 💰", "description": "Dispositivo físico para scripts de ayuda de tiro, sin retroceso y macros avanzadas.", "category": "other"},
+    "cyber security": {"game": "Fortnite", "website": "dma-cheats.com", "type": "De Pago 💰", "description": "Software DMA (Acceso Directo a Memoria) de máxima seguridad que requiere tarjeta de hardware externa.", "category": "cheat"},
+    "milkyway": {"game": "Dead by Daylight", "website": "milkywaycheats.com", "type": "De Pago 💰", "description": "Cheat comercial indetectable para DBD con Wallhack, desbloqueador de skins e info de asesinos.", "category": "cheat"},
+    "ruthless": {"game": "Dead by Daylight", "website": "ruthlesscheats.com", "type": "De Pago 💰", "description": "Software de pago con ESP completo, auto-skillchecks perfecto y teletransporte.", "category": "cheat"},
+    "dbd-internal": {"game": "Dead by Daylight", "website": "github.com/dbd", "type": "Gratuito 🟢", "description": "Modificación interna gratuita de código abierto que permite ESP básico y auto-wiggler.", "category": "cheat"},
+    "fury services dbd": {"game": "Dead by Daylight", "website": "fury-services.com/games/purchase_dbd", "type": "De Pago 💰", "description": "Cheat privado e indetectable para DBD con ESP, Aimbot, Auto Skillchecks, FOV Changer y desbloqueo de objetos, perks y DLCs.", "category": "cheat"},
+    "extreme injector": {"game": "Multi", "website": "unknowncheats.me", "type": "Gratuito 🟢", "description": "Inyector de DLL muy popular para muchos juegos.", "category": "injector"},
+    "ghost injector": {"game": "Multi", "website": "ghostinjector.com", "type": "Gratuito 🟢", "description": "Inyector simple y eficaz.", "category": "injector"},
+    "hdd spoofer": {"game": "Multi", "website": "spoofer.com", "type": "De Pago 💰", "description": "Spoofer de hardware para evitar baneos de HWID.", "category": "spoofer"}
+}
+
+# ============================================================================
+# SISTEMA DE APRENDIZAJE CON FIREBASE (PERSISTENTE)
+# ============================================================================
+def load_learned_cheats():
+    try:
+        url = f"{FIREBASE_URL}/learned_cheats.json"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            return data if data else {}
+        print(f"[Aprender] Error al cargar desde Firebase: {response.status_code}")
+        return {}
+    except Exception as e:
+        print(f"[Aprender] Error al cargar desde Firebase: {e}")
+        return {}
+
+def save_learned_cheats(data):
+    try:
+        url = f"{FIREBASE_URL}/learned_cheats.json"
+        response = requests.put(url, json=data, timeout=10)
+        if response.status_code == 200:
+            print(f"[Aprender] Datos guardados en Firebase correctamente")
+        else:
+            print(f"[Aprender] Error al guardar en Firebase: {response.status_code}")
+    except Exception as e:
+        print(f"[Aprender] Error al guardar en Firebase: {e}")
+
+def automatically_learn_cheat(key: str, name: str, game: str, website: str, license_type: str, description: str, category: str = "cheat"):
+    learned_data = load_learned_cheats()
+    key_clean = key.lower().strip()
+    if key_clean not in learned_data:
+        learned_data[key_clean] = {
+            "name": name.strip(),
+            "game": game.strip(),
+            "website": website.strip(),
+            "type": license_type.strip(),
+            "description": description.strip(),
+            "category": category.strip()
+        }
+        save_learned_cheats(learned_data)
+        print(f"[Autopilot Aprendizaje] Nuevo cheat registrado en Firebase: {name} (categoría: {category})")
+
+# ============================================================================
+# ENCRIPTACIÓN DE HASH (SOLO PARA MOSTRAR)
+# ============================================================================
+def encrypt_signature(hex_hash: str) -> str:
+    res = list(hex_hash.encode('utf-8'))
+    key = 0x5A
+    for i in range(len(res)):
+        res[i] = res[i] ^ key
+        key = (key + 3) % 256
+    return bytes(res).hex()
+
+# ============================================================================
+# MOTOR DE INTELIGENCIA WEB (OSINT)
+# ============================================================================
+def extract_web_intelligence(url: str):
+    intel = {
+        "title": "Desconocido",
+        "description": "No se pudo extraer una descripción detallada automáticamente del sitio web.",
+        "type": "Desconocido ❓",
+        "features": []
+    }
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            html = r.text
+            title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
+            if title_match:
+                intel["title"] = re.sub(r'\s+', ' ', title_match.group(1)).strip()
+            desc_match = re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html, re.IGNORECASE)
+            if not desc_match:
+                desc_match = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', html, re.IGNORECASE)
+            if desc_match:
+                intel["description"] = desc_match.group(1).strip()
+            else:
+                paragraphs = re.findall(r'<p>(.*?)</p>', html)
+                clean_paragraphs = [re.sub('<[^<]+?>', '', p).strip() for p in paragraphs if len(p.strip()) > 30]
+                if clean_paragraphs:
+                    intel["description"] = clean_paragraphs[0][:250] + "..."
+            text_lower = html.lower()
+            pay_indicators = ["buy", "purchase", "store", "shop", "price", "checkout", "cart", "pricing", "$", "€", "suscripción", "suscripcion", "usd", "eur", "premium", "private cheat", "lifetime"]
+            free_indicators = ["free", "gratis", "gratuito", "open-source", "open source", "freeware", "gpl", "mit license", "cracked", "dll only"]
+            pay_score = sum(1 for ind in pay_indicators if ind in text_lower)
+            free_score = sum(1 for ind in free_indicators if ind in text_lower)
+            if pay_score > free_score:
+                intel["type"] = "De Pago 💰 (Comercial)"
+            elif free_score > pay_score:
+                intel["type"] = "Gratuito 🟢"
+            else:
+                intel["type"] = "Gratuito / Código Abierto 🟢" if "github.com" in url else "Desconocido ❓"
+            features_to_check = {
+                "Aimbot": ["aimbot", "aim assist", "silent aim", "autoaim", "smooth aim"],
+                "ESP / Wallhack": ["esp", "wallhack", "chams", "skeleton", "3d box", "visuals"],
+                "Triggerbot": ["triggerbot", "autofire", "auto shoot", "trigger bot"],
+                "Ragebot / HvH": ["ragebot", "hvh", "spinbot", "anti-aim", "doubletap"],
+                "Legitbot": ["legitbot", "legit aim", "smoothness", "recoil control"],
+                "Bypass de Anti-Cheat": ["bypass", "undetected", "ud", "anti-cheat bypass", "kernel driver"],
+                "Speedhack / Vuelo": ["speedhack", "flyhack", "noclip", "speed assist", "speed"],
+                "No Recoil": ["no recoil", "norecoil", "recoil compensator", "rcs"],
+                "Injector": ["injector", "dll injector", "injection"],
+                "Spoofer": ["spoofer", "hwid spoofer", "hardware spoofer"]
+            }
+            detected_feats = []
+            for feat, keywords in features_to_check.items():
+                if any(kw in text_lower for kw in keywords):
+                    detected_feats.append(feat)
+            intel["features"] = detected_feats
+    except Exception as e:
+        print(f"[Web Intel] Error al analizar {url}: {e}")
+    return intel
+
+# ============================================================================
+# BUSCADOR EN BASE DE DATOS (COINCIDENCIA PARCIAL)
+# ============================================================================
+def search_cheat_intel(name: str):
+    name_clean = name.lower().strip()
+    palabras_busqueda = name_clean.split()
+    # Buscar en FAMOUS_CHEATS
+    for key, info in FAMOUS_CHEATS.items():
+        key_lower = key.lower()
+        if (name_clean in key_lower or key_lower in name_clean or
+            any(palabra in key_lower for palabra in palabras_busqueda)):
+            return {
+                "name": key.capitalize(),
+                "game": info["game"],
+                "website": info["website"],
+                "type": info.get("type", "Desconocido ❓"),
+                "description": info["description"],
+                "known": True,
+                "category": info.get("category", "cheat")
+            }
+    # Buscar en learned_cheats
+    learned = load_learned_cheats()
+    for key, info in learned.items():
+        key_lower = key.lower()
+        nombre_guardado = info.get("name", "").lower()
+        if (name_clean in key_lower or key_lower in name_clean or
+            name_clean in nombre_guardado or nombre_guardado in name_clean or
+            any(palabra in key_lower for palabra in palabras_busqueda)):
+            return {
+                "name": info.get("name", key.capitalize()),
+                "game": info.get("game", "Desconocido"),
+                "website": info.get("website", "Desconocido"),
+                "type": info.get("type", "Desconocido ❓"),
+                "description": info.get("description", "Sin descripción"),
+                "known": True,
+                "category": info.get("category", "cheat")
+            }
+    # No encontrado
+    return {
+        "name": name,
+        "game": "Desconocido ❓",
+        "website": "Desconocida ❓",
+        "type": "Desconocido ❓",
+        "description": "❌ **Lo siento, no sé cuál es.**\nHe buscado en toda mi base de datos de firmas y no tengo ningún dato sobre este cheat.\n\n👉 Por favor, haz clic en el botón de abajo **'📝 Registrar Info'** para abrir el formulario y enseñarme sobre él.",
+        "known": False,
+        "category": None
+    }
+
+# ============================================================================
+# MODAL PARA REGISTRAR CHEAT (APRENDIZAJE)
+# ============================================================================
+class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Cheat"):
+    cheat_name = discord.ui.TextInput(label="Nombre del Cheat", placeholder="Ej: Midnight", max_length=50)
+    juego = discord.ui.TextInput(label="¿De qué videojuego es?", placeholder="Ej: Counter Strike 2", max_length=50)
+    website = discord.ui.TextInput(label="Página Web / Foro de origen", placeholder="Ej: github.com o site.com", max_length=100)
+    pago_gratis = discord.ui.TextInput(label="¿Es de pago o gratuito?", placeholder="Ej: De Pago / Gratuito / Suscripción", max_length=30)
+    descripcion = discord.ui.TextInput(label="Descripción / Características", style=discord.TextStyle.paragraph, placeholder="Ej: Aimbot con bypass legítimo...", max_length=300)
+    categoria = discord.ui.TextInput(label="Categoría (cheat, injector, spoofer, other)", placeholder="Ej: cheat", max_length=20, required=False)
+
+    def __init__(self, default_name: str = "", default_category: str = "cheat"):
+        super().__init__()
+        if default_name:
+            self.cheat_name.default = default_name
+        if default_category:
+            self.categoria.default = default_category
+
+    async def on_submit(self, interaction: discord.Interaction):
+        learned_data = load_learned_cheats()
+        key = self.cheat_name.value.lower().strip()
+        category = self.categoria.value.strip().lower() if self.categoria.value else "cheat"
+        if category not in ["cheat", "injector", "spoofer", "other"]:
+            category = "cheat"
+        learned_data[key] = {
+            "name": self.cheat_name.value.strip(),
+            "game": self.juego.value.strip(),
+            "website": self.website.value.strip(),
+            "type": self.pago_gratis.value.strip(),
+            "description": self.descripcion.value.strip(),
+            "category": category
+        }
+        save_learned_cheats(learned_data)
+        embed = discord.Embed(
+            title="🧠 ¡Inteligencia Aprendida y Registrada con Éxito!",
+            description=f"He registrado el **{self.cheat_name.value}** (categoría: {category}) en mi base de datos de aprendizaje permanente.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="🎮 Videojuego", value=self.juego.value, inline=True)
+        embed.add_field(name="🌐 Sitio Web", value=self.website.value, inline=True)
+        embed.add_field(name="🏷️ Licencia / Precio", value=self.pago_gratis.value, inline=True)
+        embed.add_field(name="📝 Descripción", value=self.descripcion.value, inline=False)
+        embed.set_footer(text="A partir de ahora, reconoceré este cheat al instante.")
+        await interaction.response.send_message(embed=embed)
+
+# ============================================================================
+# VISTA PARA SELECCIONAR CATEGORÍA (DESPLEGABLE) ANTES DE REGISTRAR
+# ============================================================================
+class CategoriaSelect(discord.ui.Select):
+    def __init__(self, filename: str, sha256_hash: str, secure_hash: str, attachment_url: str):
+        self.filename = filename
+        self.sha256_hash = sha256_hash
+        self.secure_hash = secure_hash
+        self.attachment_url = attachment_url
+        options = [
+            discord.SelectOption(label="Cheat", description="Software de trampas para ventajas en el juego", emoji="🎮"),
+            discord.SelectOption(label="Injector", description="Inyector de DLLs o scripts", emoji="💉"),
+            discord.SelectOption(label="Spoofer", description="Spoofear hardware/ID para evitar baneos", emoji="🔄"),
+            discord.SelectOption(label="Otro", description="Otra categoría no contemplada", emoji="❓")
+        ]
+        super().__init__(placeholder="Selecciona la categoría del archivo...", options=options, custom_id="categoria_select")
+
+    async def callback(self, interaction: discord.Interaction):
+        categoria = self.values[0].lower()
+        # Abrir modal para completar datos
+        modal = CheatRegistrationModal(default_name=self.filename.split('.')[0].capitalize(), default_category=categoria)
+        await interaction.response.send_modal(modal)
+
+class CategoriaView(discord.ui.View):
+    def __init__(self, filename: str, sha256_hash: str, secure_hash: str, attachment_url: str):
+        super().__init__(timeout=60)
+        self.add_item(CategoriaSelect(filename, sha256_hash, secure_hash, attachment_url))
+
+# ============================================================================
+# MODAL PARA HASH MANUAL (GUARDA HASH ORIGINAL)
+# ============================================================================
+class ManualHashBanModal(discord.ui.Modal, title="🔑 Banear por Hash Manual"):
+    raw_hash = discord.ui.TextInput(label="Hash SHA-256 Original", placeholder="Introduce el hash SHA-256 del binario (64 caracteres)", max_length=64, min_length=64)
+    cheat_name = discord.ui.TextInput(label="Nombre del Cheat", placeholder="Ej: Midnight", max_length=50)
+
+    def __init__(self, default_name: str = ""):
+        super().__init__()
+        if default_name:
+            self.cheat_name.default = default_name
+
+    async def on_submit(self, interaction: discord.Interaction):
+        sha256_hash = self.raw_hash.value.lower().strip()
+        body = {
+            "hash": sha256_hash,
+            "originalName": self.cheat_name.value.strip() + ".exe",
+            "uploadedBy": f"Discord Bot (Manual Hash Ban by {interaction.user.name})",
+            "banned": True
+        }
+        firebase_path = f"{FIREBASE_URL}/cheat_signatures/{sha256_hash}.json"
+        try:
+            response = requests.put(firebase_path, json=body)
+            if response.status_code == 200:
+                embed = discord.Embed(title="🛡️ Firma Registrada Correctamente", description="Se ha subido la firma del cheat a Firebase (hash original).", color=discord.Color.green())
+                embed.add_field(name="Cheat", value=self.cheat_name.value, inline=True)
+                embed.add_field(name="Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
+                embed.set_footer(text="Anti-Cheat VanguardX actualizado con esta firma.")
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.response.send_message(f"❌ Error al conectar con Firebase (Código {response.status_code})", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error de red: {str(e)}", ephemeral=True)
+
+# ============================================================================
+# VISTA PARA REGISTRAR NUEVO CHEAT (BOTÓN)
+# ============================================================================
+class RegisterNewCheatOnlyView(discord.ui.View):
+    def __init__(self, default_name: str = ""):
+        super().__init__(timeout=None)
+        self.default_name = default_name
+
+    @discord.ui.button(label="📝 Registrar Cheat", style=discord.ButtonStyle.blurple, custom_id="register_new_only")
+    async def register(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = CheatRegistrationModal(self.default_name)
+        await interaction.response.send_modal(modal)
+
+# ============================================================================
+# EXTRACCIÓN DE ENLACES DE DESCARGA AUTOMÁTICA (GitHub, Mediafire, Drive)
+# ============================================================================
+def get_auto_download_info(url: str):
+    if "github.com" in url:
+        match = re.search(r'github\.com/([a-zA-Z0-9\-]+)/([a-zA-Z0-9\-\._]+)', url)
+        if match:
+            user, repo = match.group(1), match.group(2)
+            api_url = f"https://api.github.com/repos/{user}/{repo}/releases/latest"
+            try:
+                r_api = requests.get(api_url, headers=HEADERS, timeout=8)
+                if r_api.status_code == 200:
+                    data = r_api.json()
+                    for asset in data.get("assets", []):
+                        asset_name = asset.get("name", "")
+                        ext = asset_name.split('.')[-1].lower()
+                        if ext in ["exe", "dll", "sys", "zip", "rar"]:
+                            return {
+                                "direct_url": asset.get("browser_download_url"),
+                                "filename": asset_name,
+                                "size_kb": round(asset.get("size", 0) / 1024, 2),
+                                "source": f"{user}/{repo}"
+                            }
+            except Exception as e:
+                print(f"[Auto GitHub] Error: {e}")
+    if "mediafire.com" in url:
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                match_link = re.search(r'href="([^"]+download[^"]+)"', r.text)
+                if not match_link:
+                    match_link = re.search(r'id="downloadButton"\s+href="([^"]+)"', r.text)
+                if match_link:
+                    direct = match_link.group(1)
+                    filename = direct.split('/')[-1]
+                    if not filename or "." not in filename:
+                        filename = "mediafire_file.exe"
+                    return {"direct_url": direct, "filename": filename, "size_kb": 0.0, "source": "Mediafire"}
+        except Exception as e:
+            print(f"[Auto Mediafire] Error: {e}")
+    if "drive.google.com" in url:
+        match = re.search(r'/file/d/([a-zA-Z0-9\-_]+)', url)
+        if match:
+            file_id = match.group(1)
+            direct = f"https://docs.google.com/uc?export=download&id={file_id}"
+            return {"direct_url": direct, "filename": "google_drive_file.exe", "size_kb": 0.0, "source": "Google Drive"}
+    return None
+
+# ============================================================================
+# VISTA DE APROBACIÓN DE CHEAT (BOTONES VERDE, AZUL, ROJO)
+# ============================================================================
+class CheatApprovalView(discord.ui.View):
+    def __init__(self, filename: str, raw_hash: str, secure_hash: str, source_url: str, cheat_name: str):
+        super().__init__(timeout=None)
+        self.filename = filename
+        self.raw_hash = raw_hash
+        self.secure_hash = secure_hash
+        self.source_url = source_url
+        self.cheat_name = cheat_name
+        if self.raw_hash == "N/A":
+            self.approve.label = "🔑 Banear Hash Manual"
+            self.approve.style = discord.ButtonStyle.grey
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        print(f"[Error Botón] {error}", flush=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Error interno: `{error}`", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Error interno: `{error}`", ephemeral=True)
+        except Exception:
+            pass
+
+    @discord.ui.button(label="🟢 Aprobar y Banear", style=discord.ButtonStyle.green, custom_id="approve_cheat")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("🚫 **No tienes permisos.** Solo los administradores pueden aprobar o banear cheats.", ephemeral=True)
+            await interaction.channel.send(f"⚠️ **Intento no autorizado:** El usuario {interaction.user.mention} ha intentado aprobar el cheat **{self.cheat_name}** sin ser administrador.")
+            return
+        if self.raw_hash == "N/A":
+            modal = ManualHashBanModal(self.cheat_name)
+            await interaction.response.send_modal(modal)
+            return
+        await interaction.response.defer(ephemeral=False)
+        body = {
+            "hash": self.raw_hash,
+            "originalName": self.filename,
+            "uploadedBy": f"Discord Bot (Approved by {interaction.user.name})",
+            "banned": True
+        }
+        firebase_path = f"{FIREBASE_URL}/cheat_signatures/{self.raw_hash}.json"
+        try:
+            response = await asyncio.to_thread(requests.put, firebase_path, json=body, timeout=15)
+            if response.status_code == 200:
+                embed = interaction.message.embeds[0]
+                embed.title = "🛡️ Cheat Baneado y Registrado"
+                embed.color = discord.Color.green()
+                embed.add_field(name="Estado", value=f"✅ Aprobado y subido a Firebase por {interaction.user.mention}.", inline=False)
+                for i, field in enumerate(embed.fields):
+                    if field.name == "🔒 Hash Encriptado (Firebase)":
+                        embed.remove_field(i)
+                        break
+                for child in self.children:
+                    child.disabled = True
+                await interaction.message.edit(embed=embed, view=self)
+                await interaction.followup.send(f"✅ ¡Cheat baneado correctamente en Firebase con hash original: `{self.raw_hash[:16]}...`!", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Error al conectar con Firebase (Código {response.status_code}). Comprueba las reglas de la base de datos.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error de red al contactar Firebase: `{str(e)}`", ephemeral=True)
+
+    @discord.ui.button(label="📝 Registrar Info", style=discord.ButtonStyle.blurple, custom_id="teach_bot")
+    async def teach(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = CheatRegistrationModal(self.cheat_name)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="🔴 Denegar", style=discord.ButtonStyle.red, custom_id="deny_cheat")
+    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("🚫 **No tienes permisos.** Solo los administradores pueden denegar cheats.", ephemeral=True)
+            await interaction.channel.send(f"⚠️ **Intento no autorizado:** El usuario {interaction.user.mention} ha intentado denegar el cheat **{self.cheat_name}** sin ser administrador.")
+            return
+        await interaction.response.defer(ephemeral=False)
+        embed = interaction.message.embeds[0]
+        embed.title = "❌ Solicitud de Cheat Denegada"
+        embed.color = discord.Color.red()
+        embed.add_field(name="Estado", value=f"🚫 Descartado por {interaction.user.mention}.", inline=False)
+        for child in self.children:
+            child.disabled = True
+        await interaction.message.edit(embed=embed, view=self)
+        await interaction.followup.send("🚫 Cheat denegado.", ephemeral=True)
+
+# ============================================================================
+# FUNCIÓN DE ESTADÍSTICAS SEMANALES (se ejecuta en segundo plano)
+# ============================================================================
+async def enviar_estadisticas_semanales():
+    await bot.wait_until_ready()
+    await asyncio.sleep(10)
+    while not bot.is_closed():
+        try:
+            channel = None
+            for guild in bot.guilds:
+                for ch in guild.text_channels:
+                    if ch.name == "🌐𝘽𝙖𝙨𝙚-𝙙𝙚-𝙙𝙖𝙩𝙤𝙨":
+                        channel = ch
+                        break
+                if channel:
+                    break
+            if channel is None:
+                print("[Estadísticas] No se encontró el canal '🌐𝘽𝙖𝙨𝙚-𝙙𝙚-𝙙𝙖𝙩𝙤𝙨'")
+                await asyncio.sleep(3600)
+                continue
+            total_famosos = len(FAMOUS_CHEATS)
+            learned = load_learned_cheats()
+            total_aprendidos = len(learned)
+            total_general = total_famosos + total_aprendidos
+            # Desglose por categoría
+            categorias = {"cheat": 0, "injector": 0, "spoofer": 0, "other": 0}
+            for info in FAMOUS_CHEATS.values():
+                cat = info.get("category", "cheat")
+                categorias[cat] = categorias.get(cat, 0) + 1
+            for info in learned.values():
+                cat = info.get("category", "cheat")
+                categorias[cat] = categorias.get(cat, 0) + 1
+            # Top juegos (igual que antes)
+            juegos_static = {}
+            for cheat_info in FAMOUS_CHEATS.values():
+                juego = cheat_info.get("game", "Desconocido")
+                juegos_static[juego] = juegos_static.get(juego, 0) + 1
+            juegos_learned = {}
+            for cheat_info in learned.values():
+                juego = cheat_info.get("game", "Desconocido")
+                juegos_learned[juego] = juegos_learned.get(juego, 0) + 1
+            todos_juegos = {}
+            for juego, count in juegos_static.items():
+                todos_juegos[juego] = count
+            for juego, count in juegos_learned.items():
+                todos_juegos[juego] = todos_juegos.get(juego, 0) + count
+            juegos_ordenados = sorted(todos_juegos.items(), key=lambda x: x[1], reverse=True)
+            embed = discord.Embed(title="📊 **ESTADÍSTICAS SEMANALES DE VANGUARDX**", description=f"**Fecha:** {time.strftime('%d/%m/%Y')}\n**Próximo resumen:** En 7 días", color=discord.Color.purple(), timestamp=discord.utils.utcnow())
+            embed.add_field(name="📈 **RESUMEN GENERAL**", value=f"┌─────────────────────────────┐\n│ 🗂️  **Total:**     │\n│       **{total_general}** items      │\n├─────────────────────────────┤\n│ 🎮 **Cheats:** {categorias.get('cheat',0)} │\n│ 💉 **Injectores:** {categorias.get('injector',0)} │\n│ 🔄 **Spoofers:** {categorias.get('spoofer',0)} │\n│ ❓ **Otros:** {categorias.get('other',0)} │\n└─────────────────────────────┘", inline=False)
+            top_juegos = juegos_ordenados[:10]
+            juegos_texto = ""
+            for i, (juego, count) in enumerate(top_juegos, 1):
+                bar_length = min(20, int(count / max(1, top_juegos[0][1]) * 20)) if top_juegos else 0
+                barra = "█" * bar_length + "░" * (20 - bar_length)
+                juegos_texto += f"**{i}.** `{juego[:25]}` → {barra} **{count}**\n"
+            embed.add_field(name="🎮 **TOP JUEGOS CON MÁS ITEMS**", value=juegos_texto or "No hay items registrados todavía.", inline=False)
+            if total_aprendidos > 0:
+                aprendidos_recientes = list(learned.items())[-5:]
+                recientes_texto = ""
+                for key, info in reversed(aprendidos_recientes):
+                    nombre = info.get("name", key.capitalize())
+                    juego = info.get("game", "Desconocido")
+                    recientes_texto += f"┌─────────────────────────────┐\n│ 🔹 **{nombre[:25]}**\n│    📌 *{juego[:30]}*\n└─────────────────────────────┘\n"
+                embed.add_field(name="🆕 **ÚLTIMOS APRENDIDOS**", value=recientes_texto or "No hay items aprendidos recientemente.", inline=False)
+            embed.set_footer(text="VanguardX Anti-Cheat System | Protegiendo tu comunidad", icon_url=bot.user.avatar.url if bot.user.avatar else None)
+            await channel.send(embed=embed)
+            print(f"[Estadísticas] Resumen semanal enviado a #{channel.name} con {total_general} items totales")
+            await asyncio.sleep(604800)
+        except Exception as e:
+            print(f"[Estadísticas] Error: {e}")
+            await asyncio.sleep(3600)
+
+# ============================================================================
+# EVENTO on_message (MEJORADO: pregunta categoría si es desconocido)
+# ============================================================================
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    if CANAL_AUTORIZADO_ID is not None and message.channel.id != CANAL_AUTORIZADO_ID:
+        await bot.process_commands(message)
+        return
+
+    if message.attachments:
+        for attachment in message.attachments:
+            ext = attachment.filename.split('.')[-1].lower()
+            if ext in ['exe', 'dll', 'sys']:
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        await message.channel.send(f"🔍 *Analizando archivo adjunto '{attachment.filename}'...*")
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"[Reintento] Error al enviar mensaje (intento {attempt+1}): {e}")
+                            await asyncio.sleep(2)
+                        else:
+                            print(f"[Error] No se pudo enviar mensaje tras {max_retries} intentos: {e}")
+                            await message.channel.send(f"⚠️ Error de conexión al analizar '{attachment.filename}'")
+                try:
+                    file_data = await attachment.read()
+                    sha256_hash = hashlib.sha256(file_data).hexdigest()
+                    secure_hash = encrypt_signature(sha256_hash)
+                    pos_name = attachment.filename.split('.')[0]
+                    intel = search_cheat_intel(pos_name)
+                    # Si es conocido, mostrar embed con botones (como antes)
+                    if intel['known']:
+                        embed = discord.Embed(
+                            title=f"🕵️ Análisis: {intel['name']}",
+                            description="Se ha recopilado un archivo binario. Revisa su información de inteligencia abajo.",
+                            color=discord.Color.gold()
+                        )
+                        embed.add_field(name="🎮 Videojuego", value=intel['game'], inline=True)
+                        embed.add_field(name="🌐 Página Web", value=intel['website'], inline=True)
+                        embed.add_field(name="🏷️ Licencia / Coste", value=intel['type'], inline=True)
+                        embed.add_field(name="📝 Descripción", value=intel['description'], inline=False)
+                        embed.add_field(name="🔑 Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
+                        embed.set_footer(text="Haz clic abajo para Banear o Registrar su información si es nuevo.")
+                        view = CheatApprovalView(attachment.filename, sha256_hash, secure_hash, attachment.url, pos_name)
+                        await message.channel.send(embed=embed, view=view)
+                    else:
+                        # Desconocido: preguntar categoría y luego registrar
+                        embed_unknown = discord.Embed(
+                            title="⚠️ Archivo desconocido",
+                            description=f"No reconozco el archivo `{attachment.filename}`.\n¿Quieres registrarlo en mi base de datos? Selecciona su categoría en el menú desplegable.",
+                            color=discord.Color.orange()
+                        )
+                        embed_unknown.add_field(name="Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
+                        view = CategoriaView(attachment.filename, sha256_hash, secure_hash, attachment.url)
+                        await message.channel.send(embed=embed_unknown, view=view)
+                except Exception as e:
+                    await message.channel.send(f"❌ Error al procesar el archivo: {str(e)}")
+    await bot.process_commands(message)
+
+# ============================================================================
+# COMANDOS PRINCIPALES
+# ============================================================================
+@bot.command(name="añadir")
+async def añadir_manual(ctx):
+    if CANAL_AUTORIZADO_ID is not None and ctx.channel.id != CANAL_AUTORIZADO_ID:
+        return
+    view = RegisterNewCheatOnlyView()
+    await ctx.send("🧠 **Formulario de Aprendizaje de VanguardX**\nHaz clic en el botón de abajo para abrir el panel e ingresar los detalles del cheat.", view=view)
+
+@bot.command(name="estadisticas", aliases=["stats", "resumen"])
+async def estadisticas(ctx):
+    if CANAL_AUTORIZADO_ID is not None and ctx.channel.id != CANAL_AUTORIZADO_ID:
+        return
+    await ctx.send("📊 *Generando estadísticas de VanguardX...*")
+    try:
+        total_famosos = len(FAMOUS_CHEATS)
+        learned = load_learned_cheats()
+        total_aprendidos = len(learned)
+        total_general = total_famosos + total_aprendidos
+        categorias = {"cheat": 0, "injector": 0, "spoofer": 0, "other": 0}
+        for info in FAMOUS_CHEATS.values():
+            cat = info.get("category", "cheat")
+            categorias[cat] = categorias.get(cat, 0) + 1
+        for info in learned.values():
+            cat = info.get("category", "cheat")
+            categorias[cat] = categorias.get(cat, 0) + 1
+        juegos_static = {}
+        for cheat_info in FAMOUS_CHEATS.values():
+            juego = cheat_info.get("game", "Desconocido")
+            juegos_static[juego] = juegos_static.get(juego, 0) + 1
+        juegos_learned = {}
+        for cheat_info in learned.values():
+            juego = cheat_info.get("game", "Desconocido")
+            juegos_learned[juego] = juegos_learned.get(juego, 0) + 1
+        todos_juegos = {}
+        for juego, count in juegos_static.items():
+            todos_juegos[juego] = count
+        for juego, count in juegos_learned.items():
+            todos_juegos[juego] = todos_juegos.get(juego, 0) + count
+        juegos_ordenados = sorted(todos_juegos.items(), key=lambda x: x[1], reverse=True)
+        embed = discord.Embed(title="📊 **ESTADÍSTICAS DE VANGUARDX**", description=f"**Fecha:** {time.strftime('%d/%m/%Y %H:%M')}\n*Resumen actualizado en tiempo real*", color=discord.Color.purple(), timestamp=discord.utils.utcnow())
+        embed.add_field(name="📈 **RESUMEN GENERAL**", value=f"```ansi\n┌─────────────────────────────────┐\n│ [1;36m🗂️  Total items:[0m                 │\n│       [1;33m{str(total_general).rjust(4)}[0m items               │\n├─────────────────────────────────┤\n│ [1;32m🎮 Cheats:[0m     {str(categorias.get('cheat',0)).rjust(4)}                     │\n│ [1;34m💉 Injectores:[0m {str(categorias.get('injector',0)).rjust(4)}                     │\n│ [1;35m🔄 Spoofers:[0m   {str(categorias.get('spoofer',0)).rjust(4)}                     │\n│ [1;33m❓ Otros:[0m      {str(categorias.get('other',0)).rjust(4)}                     │\n└─────────────────────────────────┘\n```", inline=False)
+        top_juegos = juegos_ordenados[:10]
+        juegos_texto = ""
+        max_count = top_juegos[0][1] if top_juegos else 1
+        for i, (juego, count) in enumerate(top_juegos, 1):
+            bar_length = min(20, int(count / max(1, max_count) * 20))
+            barra = "█" * bar_length + "░" * (20 - bar_length)
+            juegos_texto += f"**{i}.** `{juego[:25]}` → {barra} **{count}**\n"
+        embed.add_field(name="🎮 **TOP JUEGOS CON MÁS ITEMS**", value=juegos_texto or "*No hay items registrados todavía.*", inline=False)
+        if total_aprendidos > 0:
+            aprendidos_recientes = list(learned.items())[-5:]
+            recientes_texto = ""
+            for key, info in reversed(aprendidos_recientes):
+                nombre = info.get("name", key.capitalize())
+                juego = info.get("game", "Desconocido")
+                tipo = info.get("type", "Desconocido")
+                cat = info.get("category", "cheat")
+                emoji = {"cheat": "🎮", "injector": "💉", "spoofer": "🔄", "other": "❓"}.get(cat, "📦")
+                recientes_texto += f"┌─────────────────────────────────────┐\n│ {emoji} **{nombre[:27]}**\n│    📌 *{juego[:30]}*\n│    🏷️  {tipo[:25]}\n└─────────────────────────────────────┘\n"
+            embed.add_field(name="🆕 **ÚLTIMOS CHEATS APRENDIDOS**", value=f"```\n{recientes_texto}```", inline=False)
+        else:
+            embed.add_field(name="🆕 **ÚLTIMOS CHEATS APRENDIDOS**", value="*Todavía no se ha aprendido ningún item automáticamente.*\nUsa `!añadir` o arrastra archivos .exe/.dll para que el bot aprenda.", inline=False)
+        if total_general > 0:
+            porcentaje_aprendido = round((total_aprendidos / total_general) * 100, 1)
+            embed.add_field(name="📊 **PROGRESO DE APRENDIZAJE**", value=f"```diff\n+ El bot ha aprendido el {porcentaje_aprendido}% de sus items totales\n- Queda un {100 - porcentaje_aprendido}% por descubrir\n```", inline=False)
+        embed.set_footer(text="VanguardX Anti-Cheat System | Protegiendo tu comunidad", icon_url=bot.user.avatar.url if bot.user.avatar else None)
+        await ctx.send(embed=embed)
+    except Exception as e:
+        print(f"[Estadísticas] Error en comando: {e}")
+        await ctx.send(f"❌ Error al generar estadísticas: `{str(e)}`")
+
+@bot.command(name="juegos")
+async def juegos_cheats(ctx, *, juego: str):
+    if CANAL_AUTORIZADO_ID is not None and ctx.channel.id != CANAL_AUTORIZADO_ID:
+        return
+    juego_lower = juego.lower().strip()
+    await ctx.send(f"🎮 *Buscando cheats registrados para '{juego}' en nuestra base de datos...*")
+    encontrados = []
+    for key, info in FAMOUS_CHEATS.items():
+        if juego_lower in info["game"].lower() or info["game"].lower() in juego_lower:
+            encontrados.append({"name": key.capitalize(), "website": info["website"], "type": info.get("type", "De Pago 💰"), "description": info["description"], "category": info.get("category", "cheat")})
+    learned = load_learned_cheats()
+    for key, info in learned.items():
+        juego_cheat = info.get("game", "").lower()
+        if juego_lower in juego_cheat or juego_cheat in juego_lower:
+            encontrados.append({"name": info.get("name", key.capitalize()), "website": info.get("website", "Desconocido"), "type": info.get("type", "Desconocido ❓"), "description": info.get("description", "Sin descripción"), "category": info.get("category", "cheat")})
+    if not encontrados:
+        view = RegisterNewCheatOnlyView(juego.capitalize() + " Hack")
+        await ctx.send(f"❌ **No tenemos ningún item registrado para el juego '{juego}' todavía.**\n\n👉 Puedes registrar uno nuevo manualmente haciendo clic en **'📝 Registrar Cheat'**.", view=view)
+        return
+    embed = discord.Embed(title=f"🎮 Catálogo de Items de {juego.upper()}", description=f"Se han encontrado **{len(encontrados)}** items registrados en nuestra base de datos para este juego.", color=discord.Color.dark_green())
+    for c in encontrados:
+        emoji = {"cheat": "🎮", "injector": "💉", "spoofer": "🔄", "other": "❓"}.get(c["category"], "📦")
+        val_text = f"🌐 **Web:** *{c['website']}*\n🏷️ **Coste:** {c['type']}\n📝 **Detalles:** {c['description']}"
+        embed.add_field(name=f"{emoji} {c['name']}", value=val_text, inline=False)
+    embed.set_footer(text="Usa !buscar <juego> para rastrear la web o !añadir para registrar más.")
+    await ctx.send(embed=embed)
+
+@bot.command(name="nombres")
+async def nombres_cheats(ctx, *, consulta: str):
+    if CANAL_AUTORIZADO_ID is not None and ctx.channel.id != CANAL_AUTORIZADO_ID:
+        return
+    consulta = consulta.lower().strip()
+    await ctx.send(f"🧠 *Analizando bases de datos e internet buscando nombres de cheats relacionados con '{consulta}'...*")
+    palabras_clave = consulta.split()
+    nombres = set()
+    for key, val in FAMOUS_CHEATS.items():
+        nombre_cheat = key.lower()
+        juego_cheat = val["game"].lower()
+        for palabra in palabras_clave:
+            if palabra in nombre_cheat or palabra in juego_cheat or consulta in nombre_cheat or consulta in juego_cheat:
+                nombres.add(key.capitalize())
+                break
+    learned = load_learned_cheats()
+    for key, val in learned.items():
+        nombre_cheat = key.lower()
+        juego_cheat = val.get("game", "").lower()
+        for palabra in palabras_clave:
+            if palabra in nombre_cheat or palabra in juego_cheat or consulta in nombre_cheat or consulta in juego_cheat:
+                nombres.add(val.get("name", key.capitalize()))
+                break
+    try:
+        terminos_a_buscar = [consulta] + palabras_clave[:2]
+        for termino in set(terminos_a_buscar):
+            web_query = urllib.parse.quote(f"best cheats for {termino} OR injector OR spoofer")
+            ddg_url = f"https://html.duckduckgo.com/html/?q={web_query}"
+            r = requests.get(ddg_url, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                titulos = re.findall(r'<a class="result__url" href="[^"]+">([^<]+)</a>', r.text)
+                for t in titulos:
+                    words = re.findall(r'\b[A-Z][a-zA-Z0-9]{3,12}\b', t)
+                    for w in words:
+                        w_lower = w.lower()
+                        if w_lower not in ["cheat", "cheats", "hack", "hacks", "download", "free", "best", "forum", "updated", "game", "games", "roblox", "fortnite", "valorant", "minecraft", "online", "github", "release", "aimbot", "esp", "wallhack", "triggerbot", "injector", "spoofer"]:
+                            nombres.add(w)
+    except Exception as e:
+        print(f"[Nombres Scraper] Error: {e}")
+    if not nombres:
+        view = RegisterNewCheatOnlyView(consulta.capitalize() + " Hack")
+        await ctx.send(f"❌ **No he podido identificar nombres populares relacionados con '{consulta}' en internet.**\n\n👉 Puedes registrar uno manualmente pulsando **'📝 Registrar Cheat'**.", view=view)
+        return
+    embed = discord.Embed(title=f"🧠 Reporte de Inteligencia: Items relacionados con '{consulta.upper()}'", description="Marcas de software más populares encontradas (coincidencia parcial).", color=discord.Color.blue())
+    lista_nombres = sorted(list(nombres))[:12]
+    nombres_formateados = ""
+    for n in lista_nombres:
+        intel = search_cheat_intel(n)
+        emoji = {"cheat": "🎮", "injector": "💉", "spoofer": "🔄", "other": "❓"}.get(intel.get("category"), "📦")
+        nombres_formateados += f"• {emoji} **{n}** ({intel['type']}) — *Web: {intel['website']}* — {intel['description'][:80]}...\n"
+    embed.add_field(name="🏷️ Items Detectados", value=nombres_formateados, inline=False)
+    embed.set_footer(text="Usa !buscar <nombre> para buscar descargas.")
+    await ctx.send(embed=embed)
+
+@bot.command(name="buscar")
+async def buscar_cheats(ctx, *, consulta: str):
+    if CANAL_AUTORIZADO_ID is not None and ctx.channel.id != CANAL_AUTORIZADO_ID:
+        return
+    consulta = consulta.lower().strip()
+    await ctx.send(f"🕵️‍♂️ *Buscando repositorios públicos y binarios de cheats relacionados con: '{consulta}'...*")
+    palabras_clave = consulta.split()
+    terminos_busqueda = list(set([consulta] + palabras_clave))
+    enlaces_encontrados = set()
+    # Función auxiliar para buscar en DuckDuckGo
+    async def buscar_en_ddg(termino, tipo):
+        query = urllib.parse.quote(f"{termino} cheat OR hack OR injector OR spoofer download")
+        url = f"https://html.duckduckgo.com/html/?q={query}"
+        try:
+            r = await asyncio.to_thread(requests.get, url, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                if tipo == "github":
+                    links = re.findall(r'https://github\.com/[a-zA-Z0-9\-]+/[a-zA-Z0-9\-\._]+', r.text)
+                    for link in links:
+                        enlaces_encontrados.add((link, "GitHub Repository"))
+                elif tipo == "cloud":
+                    links = re.findall(r'https?://(?:www\.)?(?:mediafire\.com|drive\.google\.com)/[^\s"\'\\>]+', r.text)
+                    for link in links:
+                        cleaned_link = link.rstrip('.,);>]}')
+                        enlaces_encontrados.add((cleaned_link, "Direct Cloud Link (Mediafire/Drive)"))
+                elif tipo == "web":
+                    all_links = re.findall(r'https?://[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,6}/[^\s"\'\\>]+', r.text)
+                    for link in all_links:
+                        cleaned_link = link.rstrip('.,);>]}')
+                        link_lower = cleaned_link.lower()
+                        if any(pattern in link_lower for pattern in ["cheat", "cheats", "services", "programs", "hack", "hacks", "injector", "bypass", "spoofer"]):
+                            enlaces_encontrados.add((cleaned_link, "Web Sospechosa Detectada"))
+        except Exception as e:
+            print(f"[Crawl] Error en {tipo} para '{termino}': {e}")
+    # Ejecutar búsquedas
+    for termino in terminos_busqueda[:3]:
+        await buscar_en_ddg(termino, "github")
+        await buscar_en_ddg(termino, "cloud")
+        await buscar_en_ddg(termino, "web")
+    # También buscar en YouTube
+    try:
+        for termino in terminos_busqueda[:2]:
+            yt_query = urllib.parse.quote(f"{termino} cheat download mediafire OR drive")
+            yt_url = f"https://www.youtube.com/results?search_query={yt_query}"
+            r_yt = await asyncio.to_thread(requests.get, yt_url, headers=HEADERS, timeout=10)
+            if r_yt.status_code == 200:
+                video_ids = re.findall(r'"videoId":"([^"]+)"', r_yt.text)[:3]
+                for vid in video_ids:
+                    vid_url = f"https://www.youtube.com/watch?v={vid}"
+                    r_vid = await asyncio.to_thread(requests.get, vid_url, headers=HEADERS, timeout=10)
+                    if r_vid.status_code == 200:
+                        links = re.findall(r'https?://(?:www\.)?(?:mediafire\.com|mega\.nz|drive\.google\.com|github\.com)/[^\s"\'\\>]+', r_vid.text)
+                        for link in links:
+                            cleaned_link = link.rstrip('.,);>]}')
+                            enlaces_encontrados.add((cleaned_link, f"YouTube (Vídeo: {vid})"))
+    except Exception as e:
+        print(f"[Crawl YouTube] Error: {e}")
+    if not enlaces_encontrados:
+        view = RegisterNewCheatOnlyView(consulta.capitalize() + " Hack")
+        await ctx.send(f"❌ **No se han encontrado descargas ni menciones comerciales recientes para '{consulta}' con estos filtros.**\n\n👉 Si conoces un cheat relacionado, puedes registrarlo pulsando en **'📝 Registrar Cheat'**.", view=view)
+        return
+    enlaces_filtrados = list(enlaces_encontrados)[:5]
+    await ctx.send(f"🔍 ¡Se han localizado **{len(enlaces_encontrados)}** fuentes! Analizando las **{len(enlaces_filtrados)}** más críticas...")
+    for url, origen in enlaces_filtrados:
+        try:
+            auto_info = get_auto_download_info(url)
+            if auto_info:
+                filename = auto_info["filename"]
+                direct_url = auto_info["direct_url"]
+                source = auto_info["source"]
+                await ctx.send(f"📥 *Descargando y extrayendo firma de '{filename}' desde {source}...*")
+                file_resp = await asyncio.to_thread(requests.get, direct_url, headers=HEADERS, timeout=25)
+                if file_resp.status_code == 200:
+                    file_data = file_resp.content
+                    sha256_hash = hashlib.sha256(file_data).hexdigest()
+                    secure_hash = encrypt_signature(sha256_hash)
+                    pos_name = filename.split('.')[0]
+                    intel = search_cheat_intel(pos_name)
+                    if not intel['known']:
+                        web_intel = extract_web_intelligence(url)
+                        if web_intel['description'] != "No se pudo extraer una descripción detallada automáticamente del sitio web.":
+                            intel['description'] = f"🕵️‍♂️ **Análisis OSINT Web Real:**\n{web_intel['description']}"
+                            intel['type'] = web_intel['type']
+                            if web_intel['features']:
+                                intel['description'] += f"\n\n⚡ **Características detectadas en el código web:**\n" + ", ".join([f"`{f}`" for f in web_intel['features']])
+                            if web_intel['title'] != "Desconocido":
+                                intel['name'] = f"{pos_name.capitalize()} ({web_intel['title'][:45]})"
+                            # Guardado automático (como cheat por defecto)
+                            automatically_learn_cheat(key=pos_name, name=intel['name'], game=consulta.capitalize(), website=url, license_type=web_intel['type'], description=intel['description'], category="cheat")
+                    embed = discord.Embed(title=f"🚨 Cheat Encontrado para '{consulta.capitalize()}'" if intel['known'] else f"⚠️ Cheat Detectado (relacionado con '{consulta}')", description=f"Detectado automáticamente en el repositorio: **{source}**" if "/" in source else f"Localizado en la red: **{origen}**", color=discord.Color.red() if intel['known'] else discord.Color.orange())
+                    embed.add_field(name="📂 Archivo Compilado", value=filename, inline=True)
+                    size_str = f"{auto_info['size_kb']} KB" if auto_info['size_kb'] > 0 else f"{round(len(file_data)/1024, 2)} KB"
+                    embed.add_field(name="📏 Tamaño", value=size_str, inline=True)
+                    embed.add_field(name="🌐 Página Web", value=url, inline=False)
+                    embed.add_field(name="🏷️ Licencia / Coste", value=intel['type'], inline=True)
+                    embed.add_field(name="📝 Intel / Descripción", value=intel['description'], inline=False)
+                    embed.add_field(name="🔑 Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
+                    embed.set_footer(text="Haz clic en los botones de abajo para bloquear este cheat globalmente.")
+                    view = CheatApprovalView(filename, sha256_hash, secure_hash, url, pos_name)
+                    await ctx.send(embed=embed, view=view)
+            else:
+                pos_name = url.split('/')[-1].split('?')[0]
+                if len(pos_name) < 3 or pos_name.lower() in ["forum", "download", "main", "file", "drive"]:
+                    pos_name = url.split('/')[-2] if len(url.split('/')) > 2 else "Cloud Cheat"
+                intel = search_cheat_intel(pos_name)
+                if not intel['known']:
+                    await ctx.send(f"🔍 *Analizando página externa: {pos_name}...*")
+                    web_intel = extract_web_intelligence(url)
+                    if web_intel['description'] != "No se pudo extraer una descripción detallada automáticamente del sitio web.":
+                        intel['description'] = f"🕵️‍♂️ **Análisis OSINT Web Real:**\n{web_intel['description']}"
+                        intel['type'] = web_intel['type']
+                        if web_intel['features']:
+                            intel['description'] += f"\n\n⚡ **Características detectadas en el código web:**\n" + ", ".join([f"`{f}`" for f in web_intel['features']])
+                        if web_intel['title'] != "Desconocido":
+                            intel['name'] = f"{pos_name.capitalize()} ({web_intel['title'][:45]})"
+                        automatically_learn_cheat(key=pos_name, name=intel['name'], game=consulta.capitalize(), website=url, license_type=web_intel['type'], description=intel['description'], category="cheat")
+                embed = discord.Embed(title=f"🔗 Cheat Detectado: {intel['name']}" if intel['known'] else f"⚠️ Posible cheat relacionado con '{consulta}'", description=f"Localizado en la red: **{origen}**", color=discord.Color.gold() if intel['known'] else discord.Color.orange())
+                embed.add_field(name="🎮 Videojuego", value=intel['game'], inline=True)
+                embed.add_field(name="🌐 Página Web", value=url, inline=False)
+                embed.add_field(name="🏷️ Licencia / Coste", value=intel['type'], inline=True)
+                embed.add_field(name="📝 Intel / Descripción", value=intel['description'], inline=False)
+                embed.set_footer(text="Requiere descarga manual. Arrastra el binario o banea su hash manualmente.")
+                view = CheatApprovalView("descarga_manual.exe", "N/A", "N/A", url, pos_name)
+                await ctx.send(embed=embed, view=view)
+        except Exception as e:
+            print(f"[Procesar URL] Error en {url}: {e}")
+
+# ============================================================================
+# CONTROLADORES DE ERRORES
+# ============================================================================
+@buscar_cheats.error
+async def buscar_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ **Uso correcto del comando:** `!buscar <nombre_del_juego_o_cheat>`\n*Ejemplo:* `!buscar cs2` o `!buscar neverlose`")
+
+@nombres_cheats.error
+async def nombres_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ **Uso correcto del comando:** `!nombres <nombre_del_juego>`\n*Ejemplo:* `!nombres minecraft` o `!nombres roblox`")
+
+@juegos_cheats.error
+async def juegos_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ **Uso correcto del comando:** `!juegos <nombre_del_juego>`\n*Ejemplo:* `!juegos cs2` o `!juegos minecraft`")
+
+@estadisticas.error
+async def estadisticas_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ **Uso correcto del comando:** `!estadisticas`\n*Muestra un resumen completo de la base de datos.*")
+
+# ============================================================================
+# SERVIDOR WEB PARA HUGGING FACE (OPCIONAL)
+# ============================================================================
+web_app = Flask(__name__)
+
+@web_app.route("/")
+def home():
+    return "🛡️ VanguardX Bot está en línea y funcionando correctamente."
+
+def run_web():
+    web_app.run(host="0.0.0.0", port=7860)
+
+# ============================================================================
+# INICIO DEL BOT
+# ============================================================================
+if __name__ == "__main__":
+    if not TOKEN or TOKEN == "TU_TOKEN_AQUI":
+        print("="*70, flush=True)
+        print("[FATAL] El token de Discord es inválido o está expuesto. Cámbialo por uno nuevo.", flush=True)
+        print("1. Ve a https://discord.com/developers/applications", flush=True)
+        print("2. Crea una aplicación o selecciona la tuya.", flush=True)
+        print("3. Ve a 'Bot' y copia el token.", flush=True)
+        print("4. Pégalo en la variable TOKEN dentro del código.", flush=True)
+        print("="*70, flush=True)
+        sys.exit(1)
+
+    t = threading.Thread(target=run_web, daemon=True)
+    t.start()
+    print("[Diagnóstico] Comprobando conexión a Internet...", flush=True)
+    for test_url in ["https://www.google.com", "https://discord.com", FIREBASE_URL]:
+        try:
+            r = requests.get(test_url, timeout=15)
+            print(f"[Diagnóstico] ✅ Conexión exitosa a {test_url} (Código {r.status_code})", flush=True)
+        except Exception as e:
+            print(f"[Diagnóstico] ⚠️  No se pudo conectar a {test_url}: {e}", flush=True)
+    max_retries = 5
+    retry_delay = 15
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"[Inicio] Intentando conectar el bot a Discord (Intento {attempt}/{max_retries})...", flush=True)
+            bot.run(TOKEN, reconnect=True)
+            break
+        except discord.errors.LoginFailure:
+            print("="*70, flush=True)
+            print("[FATAL] Token inválido o revocado. Genera uno nuevo en Discord Developer Portal.", flush=True)
+            sys.exit(1)
+        except discord.errors.PrivilegedIntentsRequired:
+            print("="*70, flush=True)
+            print("[FATAL] Faltan permisos de Gateway Intents. Activa 'MESSAGE CONTENT INTENT'.", flush=True)
+            sys.exit(1)
+        except Exception as e:
+            print(f"[Advertencia] Error al conectar (Intento {attempt}): {e}", flush=True)
+            if attempt < max_retries:
+                print(f"[Reintento] Esperando {retry_delay}s antes de reintentar...", flush=True)
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 120)
+            else:
+                print("[FATAL] Se agotaron todos los intentos de conexión.", flush=True)
+                sys.exit(1)
