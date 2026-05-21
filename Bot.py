@@ -16,7 +16,7 @@ import aiohttp
 # ============================================================================
 # CONFIGURACIÓN DEL BOT Y FIREBASE
 # ============================================================================
-TOKEN = os.environ.get("DISCORD_TOKEN")  # ¡CÁMBIALO POR TU TOKEN VÁLIDO!
+TOKEN = os.environ.get("DISCORD_TOKEN")  # Leer desde variable de entorno (seguro)
 FIREBASE_URL = os.environ.get("FIREBASE_URL", "https://anticheat-93e49-default-rtdb.europe-west1.firebasedatabase.app/").rstrip("/")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +39,20 @@ FAMOUS_CHEATS = {
     "neverlose": {"game": "CS2 / CS:GO", "website": "neverlose.cc", "type": "De Pago 💰", "description": "Cheat comercial de gama alta con Aimbot, ESP, Ragebot y scripts Lua.", "category": "cheat"},
     "osiris": {"game": "CS2 / CS:GO / CS1.6", "website": "github.com/danielkrupinski/Osiris", "type": "Gratuito 🟢", "description": "Cheat de código abierto muy popular y modificable.", "category": "cheat"},
     "midnight": {"game": "CS2 / GTA V", "website": "midnight.im", "type": "De Pago 💰", "description": "Cheat comercial enfocado en bypasses legítimos e integridad visual.", "category": "cheat"},
+    "memesense": {"game": "CS2", "website": "memesense.gg", "type": "De Pago 💰", "description": "Cheat privado para Counter-Strike 2 con funciones legit/rage y ESP.", "category": "cheat"},
+"1337": {"game": "CS2", "website": "1337cheats.com", "type": "De Pago 💰", "description": "Proveedor de cheats para Counter-Strike con funciones HvH y legit.", "category": "cheat"},
+"skriptgg": {"game": "Fortnite / Rust / Apex / CS2", "website": "skript.gg", "type": "De Pago 💰", "description": "Loader multijuego con bypasses y cheats privados.", "category": "cheat"},
+"hydrogen": {"game": "Roblox", "website": "hydrogen.sh", "type": "Gratis 🆓", "description": "Executor LuaU para Roblox con soporte de scripts.", "category": "executor"},
+"bytearmor_cs2": {"game": "CS2", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat competitivo para Counter-Strike 2 con funciones legit.", "category": "cheat"},
+"bytearmor_warzone": {"game": "Call of Duty: Warzone", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Toolkit avanzado para Warzone con aiming y ESP.", "category": "cheat"},
+"bytearmor_valorant": {"game": "Valorant", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat táctico con aiming y visuales optimizados.", "category": "cheat"},
+"bytearmor_fortnite": {"game": "Fortnite", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Enhancement para Fortnite con asistencia competitiva.", "category": "cheat"},
+"bytearmor_apex": {"game": "Apex Legends", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Hack menu para Apex con ESP y aimbot configurable.", "category": "cheat"},
+"bytearmor_fivem": {"game": "FiveM", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Mod menu para servidores FiveM con múltiples opciones.", "category": "mod_menu"},
+"bytearmor_rust": {"game": "Rust", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat PvP para Rust con funciones avanzadas.", "category": "cheat"},
+"bytearmor_minecraft": {"game": "Minecraft", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Hack client compatible con múltiples servidores.", "category": "hack_client"},
+"bytearmor_roblox": {"game": "Roblox", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Executor universal para scripts de Roblox.", "category": "executor"},
+"bytearmor_hwid_spoofer": {"game": "Universal", "website": "bytearmor.net", "type": "De Pago 💰", "description": "HWID spoofer para evitar bans de hardware.", "category": "spoofer"},
     "aimware": {"game": "CS2 / TF2 / PUBG", "website": "aimware.net", "type": "De Pago 💰", "description": "Uno de los multihacks comerciales más antiguos y conocidos de la escena.", "category": "cheat"},
     "iniuria": {"game": "CS2 / CS:GO", "website": "iniuria.us", "type": "De Pago 💰", "description": "Cheat premium de seguridad extrema especializado en jugar seguro en ligas oficiales.", "category": "cheat"},
     "skeet": {"game": "CS2 / CS:GO", "website": "gamesense.pub", "type": "De Pago 💰", "description": "Cheat privado por invitación de altísimo rendimiento para servidores HvH.", "category": "cheat"},
@@ -233,7 +247,7 @@ def search_cheat_intel(name: str):
     }
 
 # ============================================================================
-# MODAL PARA REGISTRAR CHEAT (APRENDIZAJE)
+# MODAL PARA REGISTRAR CHEAT (APRENDIZAJE) - CON 5 CAMPOS (CORREGIDO)
 # ============================================================================
 class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Cheat"):
     cheat_name = discord.ui.TextInput(label="Nombre del Cheat", placeholder="Ej: Midnight", max_length=50)
@@ -241,33 +255,28 @@ class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Ch
     website = discord.ui.TextInput(label="Página Web / Foro de origen", placeholder="Ej: github.com o site.com", max_length=100)
     pago_gratis = discord.ui.TextInput(label="¿Es de pago o gratuito?", placeholder="Ej: De Pago / Gratuito / Suscripción", max_length=30)
     descripcion = discord.ui.TextInput(label="Descripción / Características", style=discord.TextStyle.paragraph, placeholder="Ej: Aimbot con bypass legítimo...", max_length=300)
-    categoria = discord.ui.TextInput(label="Categoría (cheat, injector, spoofer, other)", placeholder="Ej: cheat", max_length=20, required=False)
 
     def __init__(self, default_name: str = "", default_category: str = "cheat"):
         super().__init__()
         if default_name:
             self.cheat_name.default = default_name
-        if default_category:
-            self.categoria.default = default_category
+        self.categoria = default_category  # Guardamos la categoría como atributo
 
     async def on_submit(self, interaction: discord.Interaction):
         learned_data = load_learned_cheats()
         key = self.cheat_name.value.lower().strip()
-        category = self.categoria.value.strip().lower() if self.categoria.value else "cheat"
-        if category not in ["cheat", "injector", "spoofer", "other"]:
-            category = "cheat"
         learned_data[key] = {
             "name": self.cheat_name.value.strip(),
             "game": self.juego.value.strip(),
             "website": self.website.value.strip(),
             "type": self.pago_gratis.value.strip(),
             "description": self.descripcion.value.strip(),
-            "category": category
+            "category": self.categoria
         }
         save_learned_cheats(learned_data)
         embed = discord.Embed(
             title="🧠 ¡Inteligencia Aprendida y Registrada con Éxito!",
-            description=f"He registrado el **{self.cheat_name.value}** (categoría: {category}) en mi base de datos de aprendizaje permanente.",
+            description=f"He registrado el **{self.cheat_name.value}** (categoría: {self.categoria}) en mi base de datos de aprendizaje permanente.",
             color=discord.Color.green()
         )
         embed.add_field(name="🎮 Videojuego", value=self.juego.value, inline=True)
@@ -296,7 +305,6 @@ class CategoriaSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         categoria = self.values[0].lower()
-        # Abrir modal para completar datos
         modal = CheatRegistrationModal(default_name=self.filename.split('.')[0].capitalize(), default_category=categoria)
         await interaction.response.send_modal(modal)
 
@@ -327,7 +335,7 @@ class ManualHashBanModal(discord.ui.Modal, title="🔑 Banear por Hash Manual"):
         }
         firebase_path = f"{FIREBASE_URL}/cheat_signatures/{sha256_hash}.json"
         try:
-            # ----- CORRECCIÓN: Usamos asyncio.to_thread para no bloquear -----
+            # Usamos to_thread para no bloquear
             response = await asyncio.to_thread(requests.put, firebase_path, json=body)
             if response.status_code == 200:
                 embed = discord.Embed(title="🛡️ Firma Registrada Correctamente", description="Se ha subido la firma del cheat a Firebase (hash original).", color=discord.Color.green())
