@@ -12,8 +12,6 @@ import sys
 import threading
 from flask import Flask
 import aiohttp
-from datetime import datetime, timedelta, timezone
-from googleapiclient.discovery import build
 
 # ---------- CARGAR VARIABLES DE ENTORNO DESDE .env ----------
 from dotenv import load_dotenv
@@ -24,14 +22,11 @@ load_dotenv()
 # ============================================================================
 TOKEN = os.environ.get("DISCORD_TOKEN")
 FIREBASE_URL = os.environ.get("FIREBASE_URL", "https://anticheat-93e49-default-rtdb.europe-west1.firebasedatabase.app/").rstrip("/")
-YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "learned_cheats.json")
 
-CANAL_AUTORIZADO_ID = None
-CANAL_NUEVOS_CHEATS = "📄nuevos-cheats-dbd"                     
-YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")            
+CANAL_AUTORIZADO_ID = None          
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -351,75 +346,6 @@ def upload_hash_to_firebase(sha256_hash: str, filename: str, uploaded_by: str = 
         print(f"[Hash] Excepción: {e}")
         return False
     
-# ============================================================================
-# BÚSQUEDA DE VÍDEOS EN YOUTUBE
-# ============================================================================
-@bot.command(name="new")
-async def new_cheats(ctx):
-    if not YOUTUBE_API_KEY:
-        await ctx.send("❌ API Key de YouTube no configurada.")
-        return
-    await ctx.send("🔎 Buscando vídeos recientes de cheats para Dead by Daylight...")
-    await buscar_y_enviar(ctx.channel)
-
-async def buscar_y_enviar(channel):
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _buscar_y_enviar_sync, channel)
-
-def _buscar_y_enviar_sync(channel):
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
-    published_after = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat("T") + "Z"
-    request = youtube.search().list(
-        part="snippet",
-        q="Dead by Daylight cheat hack",
-        type="video",
-        order="date",
-        publishedAfter=published_after,
-        maxResults=10
-    )
-    response = request.execute()
-    items = response.get("items", [])
-    if not items:
-        asyncio.run_coroutine_threadsafe(channel.send("📭 No se encontraron vídeos nuevos."), bot.loop)
-        return
-
-    history_file = "youtube_notified.json"
-    notified = set()
-    if os.path.exists(history_file):
-        with open(history_file, "r") as f:
-            notified = set(json.load(f))
-
-    nuevos = []
-    for video in items:
-        video_id = video["id"]["videoId"]
-        if video_id in notified:
-            continue
-        title = video["snippet"]["title"].lower()
-        if any(kw in title for kw in ["cheat", "hack", "esp", "wallhack", "speed hack", "free hack", "undetected"]):
-            nuevos.append(video)
-            notified.add(video_id)
-
-    if not nuevos:
-        asyncio.run_coroutine_threadsafe(channel.send("🔍 Ningún vídeo coincidió con el filtro."), bot.loop)
-    else:
-        for video in nuevos:
-            snippet = video["snippet"]
-            embed = discord.Embed(
-                title=f"🎥 {snippet['title'][:256]}",
-                description="Posible nuevo cheat para **Dead by Daylight**",
-                url=f"https://www.youtube.com/watch?v={video['id']['videoId']}",
-                color=discord.Color.red()
-            )
-            embed.set_author(name=snippet["channelTitle"])
-            embed.set_thumbnail(url=snippet["thumbnails"]["high"]["url"])
-            embed.add_field(name="📅 Publicado", value=snippet["publishedAt"][:10], inline=True)
-            embed.add_field(name="🔗 Enlace", value=f"[Ver en YouTube](https://www.youtube.com/watch?v={video['id']['videoId']})", inline=True)
-            embed.add_field(name="📂 Categoría", value="Desconocida (revisar)", inline=True)
-            embed.set_footer(text="VanguardX - Alerta de nuevos cheats")
-            asyncio.run_coroutine_threadsafe(channel.send(embed=embed), bot.loop)
-
-    with open(history_file, "w") as f:
-        json.dump(list(notified), f)
 
 # ============================================================================
 # TAREA DIARIA AUTOMÁTICA
@@ -778,7 +704,7 @@ async def on_message(message):
                             color=discord.Color.orange()
                         )
                         embed_unknown.add_field(name="Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
-                        view = CategoriaView(attachment.filename, sha256_hash, secure_hash, attachment.url)
+                        view = CategoriaView(attachment.filename, sha256_hash, attachment.url)
                         await message.channel.send(embed=embed_unknown, view=view)
                 except Exception as e:
                     await message.channel.send(f"❌ Error al procesar el archivo: {str(e)}")
@@ -794,12 +720,6 @@ async def añadir_manual(ctx):
     view = RegisterNewCheatOnlyView()
     await ctx.send("🧠 **Formulario de Aprendizaje de VanguardX**\nHaz clic en el botón de abajo para abrir el panel e ingresar los detalles del cheat.", view=view)
 
-@bot.event
-async def on_ready():
-    print(f"✅ Bot conectado como {bot.user}")
-    if YOUTUBE_API_KEY and not daily_youtube_search.is_running():
-        daily_youtube_search.start()
-        print("[YouTube] Tarea diaria iniciada.")
 
 @bot.command(name="estadisticas", aliases=["stats", "resumen"])
 async def estadisticas(ctx):
