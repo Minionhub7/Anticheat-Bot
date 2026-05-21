@@ -2,5 +2,4 @@ discord.py
 requests
 flask
 aiohttp
-google-api-python-client
 python-dotenv
