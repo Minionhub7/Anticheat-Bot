@@ -13,7 +13,7 @@ import threading
 from flask import Flask
 import aiohttp
 
-# ---------- CARGAR VARIABLES DE ENTORNO DESDE .env ----------
+# ---------- CARGAR VARIABILIDAD DE ENTORNO ----------
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -26,7 +26,7 @@ FIREBASE_URL = os.environ.get("FIREBASE_URL", "https://anticheat-93e49-default-r
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "learned_cheats.json")
 
-CANAL_AUTORIZADO_ID = None          
+CANAL_AUTORIZADO_ID = None
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -44,19 +44,19 @@ FAMOUS_CHEATS = {
     "osiris": {"game": "CS2 / CS:GO / CS1.6", "website": "github.com/danielkrupinski/Osiris", "type": "Gratuito 🟢", "description": "Cheat de código abierto muy popular y modificable.", "category": "cheat"},
     "midnight": {"game": "CS2 / GTA V", "website": "midnight.im", "type": "De Pago 💰", "description": "Cheat comercial enfocado en bypasses legítimos e integridad visual.", "category": "cheat"},
     "memesense": {"game": "CS2", "website": "memesense.gg", "type": "De Pago 💰", "description": "Cheat privado para Counter-Strike 2 con funciones legit/rage y ESP.", "category": "cheat"},
-"1337": {"game": "CS2", "website": "1337cheats.com", "type": "De Pago 💰", "description": "Proveedor de cheats para Counter-Strike con funciones HvH y legit.", "category": "cheat"},
-"skriptgg": {"game": "Fortnite / Rust / Apex / CS2", "website": "skript.gg", "type": "De Pago 💰", "description": "Loader multijuego con bypasses y cheats privados.", "category": "cheat"},
-"hydrogen": {"game": "Roblox", "website": "hydrogen.sh", "type": "Gratis 🆓", "description": "Executor LuaU para Roblox con soporte de scripts.", "category": "executor"},
-"bytearmor_cs2": {"game": "CS2", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat competitivo para Counter-Strike 2 con funciones legit.", "category": "cheat"},
-"bytearmor_warzone": {"game": "Call of Duty: Warzone", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Toolkit avanzado para Warzone con aiming y ESP.", "category": "cheat"},
-"bytearmor_valorant": {"game": "Valorant", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat táctico con aiming y visuales optimizados.", "category": "cheat"},
-"bytearmor_fortnite": {"game": "Fortnite", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Enhancement para Fortnite con asistencia competitiva.", "category": "cheat"},
-"bytearmor_apex": {"game": "Apex Legends", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Hack menu para Apex con ESP y aimbot configurable.", "category": "cheat"},
-"bytearmor_fivem": {"game": "FiveM", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Mod menu para servidores FiveM con múltiples opciones.", "category": "mod_menu"},
-"bytearmor_rust": {"game": "Rust", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat PvP para Rust con funciones avanzadas.", "category": "cheat"},
-"bytearmor_minecraft": {"game": "Minecraft", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Hack client compatible con múltiples servidores.", "category": "hack_client"},
-"bytearmor_roblox": {"game": "Roblox", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Executor universal para scripts de Roblox.", "category": "executor"},
-"bytearmor_hwid_spoofer": {"game": "Universal", "website": "bytearmor.net", "type": "De Pago 💰", "description": "HWID spoofer para evitar bans de hardware.", "category": "spoofer"},
+    "1337": {"game": "CS2", "website": "1337cheats.com", "type": "De Pago 💰", "description": "Proveedor de cheats para Counter-Strike con funciones HvH y legit.", "category": "cheat"},
+    "skriptgg": {"game": "Fortnite / Rust / Apex / CS2", "website": "skript.gg", "type": "De Pago 💰", "description": "Loader multijuego con bypasses y cheats privados.", "category": "cheat"},
+    "hydrogen": {"game": "Roblox", "website": "hydrogen.sh", "type": "Gratis 🆓", "description": "Executor LuaU para Roblox con soporte de scripts.", "category": "executor"},
+    "bytearmor_cs2": {"game": "CS2", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat competitivo para Counter-Strike 2 con funciones legit.", "category": "cheat"},
+    "bytearmor_warzone": {"game": "Call of Duty: Warzone", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Toolkit avanzado para Warzone con aiming y ESP.", "category": "cheat"},
+    "bytearmor_valorant": {"game": "Valorant", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat táctico con aiming y visuales optimizados.", "category": "cheat"},
+    "bytearmor_fortnite": {"game": "Fortnite", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Enhancement para Fortnite con asistencia competitiva.", "category": "cheat"},
+    "bytearmor_apex": {"game": "Apex Legends", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Hack menu para Apex con ESP y aimbot configurable.", "category": "cheat"},
+    "bytearmor_fivem": {"game": "FiveM", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Mod menu para servidores FiveM con múltiples opciones.", "category": "mod_menu"},
+    "bytearmor_rust": {"game": "Rust", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Cheat PvP para Rust con funciones avanzadas.", "category": "cheat"},
+    "bytearmor_minecraft": {"game": "Minecraft", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Hack client compatible con múltiples servidores.", "category": "hack_client"},
+    "bytearmor_roblox": {"game": "Roblox", "website": "bytearmor.net", "type": "De Pago 💰", "description": "Executor universal para scripts de Roblox.", "category": "executor"},
+    "bytearmor_hwid_spoofer": {"game": "Universal", "website": "bytearmor.net", "type": "De Pago 💰", "description": "HWID spoofer para evitar bans de hardware.", "category": "spoofer"},
     "aimware": {"game": "CS2 / TF2 / PUBG", "website": "aimware.net", "type": "De Pago 💰", "description": "Uno de los multihacks comerciales más antiguos y conocidos de la escena.", "category": "cheat"},
     "iniuria": {"game": "CS2 / CS:GO", "website": "iniuria.us", "type": "De Pago 💰", "description": "Cheat premium de seguridad extrema especializado en jugar seguro en ligas oficiales.", "category": "cheat"},
     "skeet": {"game": "CS2 / CS:GO", "website": "gamesense.pub", "type": "De Pago 💰", "description": "Cheat privado por invitación de altísimo rendimiento para servidores HvH.", "category": "cheat"},
@@ -133,9 +133,10 @@ def automatically_learn_cheat(key: str, name: str, game: str, website: str, lice
         print(f"[Autopilot Aprendizaje] Nuevo cheat registrado en Firebase: {name} (categoría: {category})")
 
 # ============================================================================
-# FUNCIÓN PARA SUBIR HASH A cheat_signatures
+# FUNCIÓN PARA SUBIR HASH A cheat_signatures (ÚNICA)
 # ============================================================================
 def upload_hash_to_firebase(sha256_hash: str, filename: str, uploaded_by: str = "Sistema (registro automático)"):
+    """Sube el hash original (sin encriptar) a la colección cheat_signatures"""
     url = f"{FIREBASE_URL}/cheat_signatures/{sha256_hash}.json"
     body = {
         "hash": sha256_hash,
@@ -271,7 +272,7 @@ def search_cheat_intel(name: str):
     }
 
 # ============================================================================
-# MODAL PARA REGISTRAR CHEAT (APRENDIZAJE) - CON 5 CAMPOS Y CATEGORÍA
+# MODAL PARA REGISTRAR CHEAT (APRENDIZAJE)
 # ============================================================================
 class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Cheat"):
     cheat_name = discord.ui.TextInput(label="Nombre del Cheat", placeholder="Ej: Midnight", max_length=50)
@@ -298,7 +299,7 @@ class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Ch
         learned_data[key] = {
             "name": self.cheat_name.value.strip(),
             "game": self.juego.value.strip(),
-            "website": "No especificada",   # ya no tenemos campo web, se incluye en descripción
+            "website": "No especificada",
             "type": self.pago_gratis.value.strip(),
             "description": self.descripcion.value.strip(),
             "category": category
@@ -324,51 +325,7 @@ class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Ch
         await interaction.response.send_message(embed=embed)
 
 # ============================================================================
-# FUNCIÓN PARA SUBIR HASH A FIREBASE (cheat_signatures)
-# ============================================================================
-def upload_hash_to_firebase(sha256_hash: str, filename: str, uploaded_by: str = "Sistema"):
-    url = f"{FIREBASE_URL}/cheat_signatures/{sha256_hash}.json"
-    body = {
-        "hash": sha256_hash,
-        "originalName": filename,
-        "uploadedBy": uploaded_by,
-        "banned": True
-    }
-    try:
-        r = requests.put(url, json=body, timeout=10)
-        if r.status_code == 200:
-            print(f"[Hash] Subido correctamente: {sha256_hash}")
-            return True
-        else:
-            print(f"[Hash] Error {r.status_code} al subir {sha256_hash}")
-            return False
-    except Exception as e:
-        print(f"[Hash] Excepción: {e}")
-        return False
-    
-
-# ============================================================================
-# TAREA DIARIA AUTOMÁTICA
-# ============================================================================
-@tasks.loop(hours=24)
-async def daily_youtube_search():
-    if not YOUTUBE_API_KEY:
-        return
-    channel = None
-    for guild in bot.guilds:
-        for ch in guild.text_channels:
-            if ch.name == CANAL_NUEVOS_CHEATS:
-                channel = ch
-                break
-        if channel:
-            break
-    if not channel:
-        print(f"[YouTube] Canal '{CANAL_NUEVOS_CHEATS}' no encontrado.")
-        return
-    await buscar_y_enviar(channel)
-
-# ============================================================================
-# VISTA PARA SELECCIONAR CATEGORÍA (DESPLEGABLE) ANTES DE REGISTRAR
+# VISTA PARA SELECCIONAR CATEGORÍA (DESPLEGABLE) - TIMEOUT None
 # ============================================================================
 class CategoriaSelect(discord.ui.Select):
     def __init__(self, filename: str, sha256_hash: str, attachment_url: str):
@@ -395,7 +352,7 @@ class CategoriaSelect(discord.ui.Select):
 
 class CategoriaView(discord.ui.View):
     def __init__(self, filename: str, sha256_hash: str, attachment_url: str):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)   # Sin timeout para que no caduque
         self.add_item(CategoriaSelect(filename, sha256_hash, attachment_url))
 
 # ============================================================================
@@ -442,11 +399,11 @@ class RegisterNewCheatOnlyView(discord.ui.View):
 
     @discord.ui.button(label="📝 Registrar Cheat", style=discord.ButtonStyle.blurple, custom_id="register_new_only")
     async def register(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = CheatRegistrationModal(default_name=self.default_name)  # categoría vacía, la rellena el usuario
+        modal = CheatRegistrationModal(default_name=self.default_name)
         await interaction.response.send_modal(modal)
 
 # ============================================================================
-# EXTRACCIÓN DE ENLACES DE DESCARGA AUTOMÁTICA
+# EXTRACCIÓN DE ENLACES DE DESCARGA AUTOMÁTICA (GitHub, Mediafire, Drive)
 # ============================================================================
 def get_auto_download_info(url: str):
     if "github.com" in url:
@@ -560,7 +517,7 @@ class CheatApprovalView(discord.ui.View):
     @discord.ui.button(label="📝 Registrar Info", style=discord.ButtonStyle.blurple, custom_id="teach_bot")
     async def teach(self, interaction: discord.Interaction, button: discord.ui.Button):
         print(f"[DEBUG] Botón 'Registrar Info' pulsado por {interaction.user} para cheat '{self.cheat_name}'")
-        modal = CheatRegistrationModal(default_name=self.cheat_name)  # categoría la rellena el usuario
+        modal = CheatRegistrationModal(default_name=self.cheat_name)
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="🔴 Denegar", style=discord.ButtonStyle.red, custom_id="deny_cheat")
@@ -704,10 +661,11 @@ async def on_message(message):
                             color=discord.Color.orange()
                         )
                         embed_unknown.add_field(name="Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
-                        view = CategoriaView(attachment.filename, sha256_hash, attachment.url)
+                        view = CategoriaView(attachment.filename, sha256_hash, attachment.url)   # CORREGIDO: 3 argumentos
                         await message.channel.send(embed=embed_unknown, view=view)
                 except Exception as e:
                     await message.channel.send(f"❌ Error al procesar el archivo: {str(e)}")
+    # Solo una llamada a process_commands al final
     await bot.process_commands(message)
 
 # ============================================================================
@@ -720,6 +678,11 @@ async def añadir_manual(ctx):
     view = RegisterNewCheatOnlyView()
     await ctx.send("🧠 **Formulario de Aprendizaje de VanguardX**\nHaz clic en el botón de abajo para abrir el panel e ingresar los detalles del cheat.", view=view)
 
+@bot.event
+async def on_ready():
+    print(f"✅ Bot conectado como {bot.user}")
+    # Iniciar tarea de estadísticas semanales
+    bot.loop.create_task(enviar_estadisticas_semanales())
 
 @bot.command(name="estadisticas", aliases=["stats", "resumen"])
 async def estadisticas(ctx):
@@ -904,23 +867,7 @@ async def buscar_cheats(ctx, *, consulta: str):
         await buscar_en_ddg(termino, "github")
         await buscar_en_ddg(termino, "cloud")
         await buscar_en_ddg(termino, "web")
-    try:
-        for termino in terminos_busqueda[:2]:
-            yt_query = urllib.parse.quote(f"{termino} cheat download mediafire OR drive")
-            yt_url = f"https://www.youtube.com/results?search_query={yt_query}"
-            r_yt = await asyncio.to_thread(requests.get, yt_url, headers=HEADERS, timeout=10)
-            if r_yt.status_code == 200:
-                video_ids = re.findall(r'"videoId":"([^"]+)"', r_yt.text)[:3]
-                for vid in video_ids:
-                    vid_url = f"https://www.youtube.com/watch?v={vid}"
-                    r_vid = await asyncio.to_thread(requests.get, vid_url, headers=HEADERS, timeout=10)
-                    if r_vid.status_code == 200:
-                        links = re.findall(r'https?://(?:www\.)?(?:mediafire\.com|mega\.nz|drive\.google\.com|github\.com)/[^\s"\'\\>]+', r_vid.text)
-                        for link in links:
-                            cleaned_link = link.rstrip('.,);>]}')
-                            enlaces_encontrados.add((cleaned_link, f"YouTube (Vídeo: {vid})"))
-    except Exception as e:
-        print(f"[Crawl YouTube] Error: {e}")
+    # No hay búsqueda en YouTube (eliminada)
     if not enlaces_encontrados:
         view = RegisterNewCheatOnlyView(consulta.capitalize() + " Hack")
         await ctx.send(f"❌ **No se han encontrado descargas ni menciones comerciales recientes para '{consulta}' con estos filtros.**\n\n👉 Si conoces un cheat relacionado, puedes registrarlo pulsando en **'📝 Registrar Cheat'**.", view=view)
@@ -1018,7 +965,7 @@ async def estadisticas_error(ctx, error):
         await ctx.send("❌ **Uso correcto del comando:** `!estadisticas`\n*Muestra un resumen completo de la base de datos.*")
 
 # ============================================================================
-# SERVIDOR WEB PARA HUGGING FACE
+# SERVIDOR WEB PARA RENDER
 # ============================================================================
 web_app = Flask(__name__)
 
