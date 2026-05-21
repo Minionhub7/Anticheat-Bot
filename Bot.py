@@ -417,6 +417,9 @@ def _buscar_y_enviar_sync(channel):
             embed.set_author(name=snippet["channelTitle"])
             embed.set_thumbnail(url=snippet["thumbnails"]["high"]["url"])
             embed.add_field(name="📅 Publicado", value=snippet["publishedAt"][:10], inline=True)
+            embed.add_field(name="🔗 Enlace", value=f"[Ver en YouTube](https://www.youtube.com/watch?v={video['id']['videoId']})", inline=True)
+            # <-- AÑADIDO: mostrar categoría (como no sabemos, se deja como "Desconocida")
+            embed.add_field(name="📂 Categoría", value="Desconocida (revisar)", inline=True)
             embed.set_footer(text="VanguardX - Alerta de nuevos cheats")
             asyncio.run_coroutine_threadsafe(channel.send(embed=embed), bot.loop)
 
@@ -898,7 +901,9 @@ async def juegos_cheats(ctx, *, juego: str):
     embed = discord.Embed(title=f"🎮 Catálogo de Items de {juego.upper()}", description=f"Se han encontrado **{len(encontrados)}** items registrados en nuestra base de datos para este juego.", color=discord.Color.dark_green())
     for c in encontrados:
         emoji = {"cheat": "🎮", "injector": "💉", "spoofer": "🔄", "other": "❓"}.get(c["category"], "📦")
-        val_text = f"🌐 **Web:** *{c['website']}*\n🏷️ **Coste:** {c['type']}\n📝 **Detalles:** {c['description']}"
+        # <-- MODIFICADO: añadir categoría como texto
+        categoria_texto = {"cheat": "Cheat", "injector": "Injector", "spoofer": "Spoofer", "other": "Otro"}.get(c["category"], "Desconocido")
+        val_text = f"🌐 **Web:** {c['website']}\n🏷️ **Tipo:** {c['type']}\n📂 **Categoría:** {categoria_texto}\n📝 **Descripción:** {c['description']}"
         embed.add_field(name=f"{emoji} {c['name']}", value=val_text, inline=False)
     embed.set_footer(text="Usa !buscar <juego> para rastrear la web o !añadir para registrar más.")
     await ctx.send(embed=embed)
@@ -952,7 +957,9 @@ async def nombres_cheats(ctx, *, consulta: str):
     for n in lista_nombres:
         intel = search_cheat_intel(n)
         emoji = {"cheat": "🎮", "injector": "💉", "spoofer": "🔄", "other": "❓"}.get(intel.get("category"), "📦")
-        nombres_formateados += f"• {emoji} **{n}** ({intel['type']}) — *Web: {intel['website']}* — {intel['description'][:80]}...\n"
+        categoria_texto = {"cheat": "Cheat", "injector": "Injector", "spoofer": "Spoofer", "other": "Otro"}.get(intel.get("category"), "Desconocido")
+        # <-- MODIFICADO: mostrar web, tipo, categoría más claramente
+        nombres_formateados += f"• {emoji} **{n}**\n   🏷️ **Tipo:** {intel['type']}\n   🌐 **Web:** {intel['website']}\n   📂 **Categoría:** {categoria_texto}\n   📝 **Descripción:** {intel['description'][:100]}...\n\n"
     embed.add_field(name="🏷️ Items Detectados", value=nombres_formateados, inline=False)
     embed.set_footer(text="Usa !buscar <nombre> para buscar descargas.")
     await ctx.send(embed=embed)
@@ -1054,6 +1061,9 @@ async def buscar_cheats(ctx, *, consulta: str):
                     embed.add_field(name="🏷️ Licencia / Coste", value=intel['type'], inline=True)
                     embed.add_field(name="📝 Intel / Descripción", value=intel['description'], inline=False)
                     embed.add_field(name="🔑 Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
+                    # <-- AÑADIDO: campo categoría
+                    categoria_texto = {"cheat": "Cheat", "injector": "Injector", "spoofer": "Spoofer", "other": "Otro"}.get(intel.get('category'), "Desconocido")
+                    embed.add_field(name="📂 Categoría", value=categoria_texto, inline=True)
                     embed.set_footer(text="Haz clic en los botones de abajo para bloquear este cheat globalmente.")
                     view = CheatApprovalView(filename, sha256_hash, secure_hash, url, pos_name)
                     await ctx.send(embed=embed, view=view)
@@ -1078,6 +1088,9 @@ async def buscar_cheats(ctx, *, consulta: str):
                 embed.add_field(name="🌐 Página Web", value=url, inline=False)
                 embed.add_field(name="🏷️ Licencia / Coste", value=intel['type'], inline=True)
                 embed.add_field(name="📝 Intel / Descripción", value=intel['description'], inline=False)
+                # <-- AÑADIDO: campo categoría
+                categoria_texto = {"cheat": "Cheat", "injector": "Injector", "spoofer": "Spoofer", "other": "Otro"}.get(intel.get('category'), "Desconocido")
+                embed.add_field(name="📂 Categoría", value=categoria_texto, inline=True)
                 embed.set_footer(text="Requiere descarga manual. Arrastra el binario o banea su hash manualmente.")
                 view = CheatApprovalView("descarga_manual.exe", "N/A", "N/A", url, pos_name)
                 await ctx.send(embed=embed, view=view)
