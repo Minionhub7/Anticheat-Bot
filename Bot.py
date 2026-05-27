@@ -573,8 +573,52 @@ async def enviar_estadisticas_semanales():
             if channel is None:
                 await asyncio.sleep(3600)
                 continue
-            # ... (código idéntico al original) ...
-        except:
+
+            # Generar estadísticas semanales reales
+            total_famosos = len(FAMOUS_CHEATS)
+            learned = load_learned_cheats()
+            total_aprendidos = len(learned)
+            total_general = total_famosos + total_aprendidos
+            categorias = {"cheat": 0, "injector": 0, "spoofer": 0, "other": 0}
+            for info in FAMOUS_CHEATS.values():
+                cat = info.get("category", "cheat")
+                categorias[cat] = categorias.get(cat, 0) + 1
+            for info in learned.values():
+                cat = info.get("category", "cheat")
+                categorias[cat] = categorias.get(cat, 0) + 1
+            juegos_static = {}
+            for cheat_info in FAMOUS_CHEATS.values():
+                juego = cheat_info.get("game", "Desconocido")
+                juegos_static[juego] = juegos_static.get(juego, 0) + 1
+            juegos_learned = {}
+            for cheat_info in learned.values():
+                juego = cheat_info.get("game", "Desconocido")
+                juegos_learned[juego] = juegos_learned.get(juego, 0) + 1
+            todos_juegos = {}
+            for juego, count in juegos_static.items():
+                todos_juegos[juego] = count
+            for juego, count in juegos_learned.items():
+                todos_juegos[juego] = todos_juegos.get(juego, 0) + count
+            juegos_ordenados = sorted(todos_juegos.items(), key=lambda x: x[1], reverse=True)
+            
+            embed = discord.Embed(title="📊 **ESTADÍSTICAS SEMANALES DE VANGUARDX**", description=f"*Resumen automático semanal*\n*Actualizado en tiempo real*", color=discord.Color.purple(), timestamp=discord.utils.utcnow())
+            embed.add_field(name="📈 **RESUMEN GENERAL**", value=f"```ansi\n┌─────────────────────────────────┐\n│  \u001b[1;36m🗂️  Total items:\u001b[0m                 │\n│        \u001b[1;33m{str(total_general).rjust(4)}\u001b[0m items               │\n├─────────────────────────────────┤\n│  \u001b[1;32m🎮 Cheats:\u001b[0m     {str(categorias.get('cheat',0)).rjust(4)}                     │\n│  \u001b[1;34m💉 Injectores:\u001b[0m {str(categorias.get('injector',0)).rjust(4)}                     │\n│  \u001b[1;35m🔄 Spoofers:\u001b[0m   {str(categorias.get('spoofer',0)).rjust(4)}                     │\n│  \u001b[1;33m❓ Otros:\u001b[0m      {str(categorias.get('other',0)).rjust(4)}                     │\n└─────────────────────────────────┘\n```", inline=False)
+            top_juegos = juegos_ordenados[:10]
+            juegos_texto = ""
+            max_count = top_juegos[0][1] if top_juegos else 1
+            for i, (juego, count) in enumerate(top_juegos, 1):
+                bar_length = min(20, int(count / max(1, max_count) * 20))
+                barra = "█" * bar_length + "░" * (20 - bar_length)
+                juegos_texto += f"**{i}.** `{juego[:25]}` → {barra} **{count}**\n"
+            embed.add_field(name="🎮 **TOP JUEGOS CON MÁS ITEMS**", value=juegos_texto or "*No hay items registrados todavía.*", inline=False)
+            embed.set_footer(text="VanguardX Anti-Cheat System | Protegiendo tu comunidad")
+            
+            await channel.send(embed=embed)
+            
+            # Esperar 7 días antes de enviar el siguiente resumen
+            await asyncio.sleep(7 * 24 * 3600)
+        except Exception as e:
+            print(f"[Estadísticas Semanales] Error: {e}")
             await asyncio.sleep(3600)
 
 # ============================================================================
