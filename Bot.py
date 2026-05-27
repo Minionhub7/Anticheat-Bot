@@ -225,20 +225,46 @@ def search_cheat_intel(name: str):
 # MODAL PARA REGISTRAR CHEAT (APRENDIZAJE) - ASÍNCRONO Y CON DEFER
 # ============================================================================
 class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Cheat"):
-    cheat_name = discord.ui.TextInput(label="Nombre del Cheat", placeholder="Ej: Midnight", max_length=50)
-    juego = discord.ui.TextInput(label="¿De qué videojuego es?", placeholder="Ej: Counter Strike 2", max_length=50)
-    pago_gratis = discord.ui.TextInput(label="¿Es de pago o gratuito?", placeholder="Ej: De Pago / Gratuito / Suscripción", max_length=30)
-    descripcion = discord.ui.TextInput(label="Descripción (incluye web si la hay)", style=discord.TextStyle.paragraph, placeholder="Ej: Aimbot con bypass... Web: https://...", max_length=300)
-    categoria = discord.ui.TextInput(label="Categoría", placeholder="cheat, injector, spoofer, other", max_length=20, required=True)
-
     def __init__(self, default_name: str = "", default_category: str = "", file_hash: str = None, filename: str = None):
         super().__init__()
-        if default_name:
-            self.cheat_name.default = default_name
-        if default_category:
-            self.categoria.default = default_category
         self.file_hash = file_hash
         self.filename = filename
+
+        self.cheat_name = discord.ui.TextInput(
+            label="Nombre del Cheat",
+            placeholder="Ej: Midnight",
+            default=default_name,
+            max_length=50
+        )
+        self.juego = discord.ui.TextInput(
+            label="¿De qué videojuego es?",
+            placeholder="Ej: Counter Strike 2",
+            max_length=50
+        )
+        self.pago_gratis = discord.ui.TextInput(
+            label="¿Es de pago o gratuito?",
+            placeholder="Ej: De Pago / Gratuito / Suscripción",
+            max_length=30
+        )
+        self.descripcion = discord.ui.TextInput(
+            label="Descripción (incluye web si la hay)",
+            style=discord.TextStyle.paragraph,
+            placeholder="Ej: Aimbot con bypass... Web: https://...",
+            max_length=300
+        )
+        self.categoria = discord.ui.TextInput(
+            label="Categoría",
+            placeholder="cheat, injector, spoofer, other",
+            default=default_category if default_category else "cheat",
+            max_length=20,
+            required=True
+        )
+
+        self.add_item(self.cheat_name)
+        self.add_item(self.juego)
+        self.add_item(self.pago_gratis)
+        self.add_item(self.descripcion)
+        self.add_item(self.categoria)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False, thinking=True)
@@ -269,10 +295,10 @@ class CheatRegistrationModal(discord.ui.Modal, title="📝 Registrar Info del Ch
         await interaction.followup.send(embed=embed)
 
 # ============================================================================
-# VISTA PARA SELECCIONAR CATEGORÍA (DESPLEGABLE) - CON custom_id DINÁMICO Y PERSISTENCIA
+# VISTA PARA SELECCIONAR CATEGORÍA (DESPLEGABLE) - CON custom_id ESTÁTICO Y PERSISTENCIA
 # ============================================================================
 class CategoriaSelect(discord.ui.Select):
-    def __init__(self, filename: str, sha256_hash: str, attachment_url: str):
+    def __init__(self, filename: str = None, sha256_hash: str = None, attachment_url: str = None):
         self.filename = filename
         self.sha256_hash = sha256_hash
         self.attachment_url = attachment_url
@@ -282,29 +308,50 @@ class CategoriaSelect(discord.ui.Select):
             discord.SelectOption(label="Spoofer", description="Spoofear hardware/ID", emoji="🔄"),
             discord.SelectOption(label="Otro", description="Otra categoría", emoji="❓")
         ]
-        # custom_id único basado en el hash
-        super().__init__(placeholder="Selecciona la categoría...", options=options, custom_id=f"categoria_{sha256_hash[:16]}", min_values=1, max_values=1)
+        # custom_id estático para persistencia real
+        super().__init__(placeholder="Selecciona la categoría...", options=options, custom_id="categoria_select_dropdown", min_values=1, max_values=1)
 
     async def callback(self, interaction: discord.Interaction):
+        embed = interaction.message.embeds[0]
+        filename = self.filename or "descarga_manual.exe"
+        sha256_hash = self.sha256_hash or "N/A"
+        
+        # Extraer información del embed si es una vista restaurada
+        for field in embed.fields:
+            name_lower = field.name.lower()
+            if "hash" in name_lower:
+                sha256_hash = field.value.replace("`", "").strip()
+            elif "archivo" in name_lower or "compilado" in name_lower:
+                filename = field.value.strip()
+
+        if sha256_hash == "N/A" and embed.title and "`" in embed.title:
+            match = re.search(r"`(.*?)`", embed.title)
+            if match:
+                filename = match.group(1)
+        elif sha256_hash == "N/A" and embed.description and "`" in embed.description:
+            match = re.search(r"`(.*?)`", embed.description)
+            if match:
+                filename = match.group(1)
+
         categoria = self.values[0].lower()
         modal = CheatRegistrationModal(
-            default_name=self.filename.split('.')[0].capitalize(),
+            default_name=filename.split('.')[0].capitalize(),
             default_category=categoria,
-            file_hash=self.sha256_hash,
-            filename=self.filename
+            file_hash=None if sha256_hash == "N/A" else sha256_hash,
+            filename=None if sha256_hash == "N/A" else filename
         )
         await interaction.response.send_modal(modal)
 
 class CategoriaView(discord.ui.View):
-    def __init__(self, filename: str, sha256_hash: str, attachment_url: str):
+    def __init__(self, filename: str = None, sha256_hash: str = None, attachment_url: str = None):
         super().__init__(timeout=None)
         self.add_item(CategoriaSelect(filename, sha256_hash, attachment_url))
 
 # ============================================================================
-# VISTA DE APROBACIÓN DE CHEAT - CON botones dinámicos y persistencia
+# VISTA DE APROBACIÓN DE CHEAT - CON botones estáticos y persistencia
 # ============================================================================
 class CheatApprovalView(discord.ui.View):
-    def __init__(self, filename: str, raw_hash: str, secure_hash: str, source_url: str, cheat_name: str):
+    def __init__(self, filename: str = None, raw_hash: str = None, secure_hash: str = None, source_url: str = None, cheat_name: str = None):
         super().__init__(timeout=None)
         self.filename = filename
         self.raw_hash = raw_hash
@@ -312,14 +359,10 @@ class CheatApprovalView(discord.ui.View):
         self.source_url = source_url
         self.cheat_name = cheat_name
 
-        # Crear botones con custom_id únicos basados en el hash
-        approve_id = f"approve_{raw_hash[:16]}" if raw_hash != "N/A" else f"approve_manual_{cheat_name[:16]}"
-        teach_id = f"teach_{raw_hash[:16]}" if raw_hash != "N/A" else f"teach_manual_{cheat_name[:16]}"
-        deny_id = f"deny_{raw_hash[:16]}" if raw_hash != "N/A" else f"deny_manual_{cheat_name[:16]}"
-
-        self.approve_button = discord.ui.Button(label="🟢 Aprobar y Banear", style=discord.ButtonStyle.green, custom_id=approve_id)
-        self.teach_button = discord.ui.Button(label="📝 Registrar Info", style=discord.ButtonStyle.blurple, custom_id=teach_id)
-        self.deny_button = discord.ui.Button(label="🔴 Denegar", style=discord.ButtonStyle.red, custom_id=deny_id)
+        # IDs estáticos fijos para que discord.py pueda emparejarlos tras reiniciar el bot
+        self.approve_button = discord.ui.Button(label="🟢 Aprobar y Banear", style=discord.ButtonStyle.green, custom_id="approve_cheat_btn")
+        self.teach_button = discord.ui.Button(label="📝 Registrar Info", style=discord.ButtonStyle.blurple, custom_id="teach_cheat_btn")
+        self.deny_button = discord.ui.Button(label="🔴 Denegar", style=discord.ButtonStyle.red, custom_id="deny_cheat_btn")
 
         self.approve_button.callback = self.approve_callback
         self.teach_button.callback = self.teach_callback
@@ -329,22 +372,59 @@ class CheatApprovalView(discord.ui.View):
         self.add_item(self.teach_button)
         self.add_item(self.deny_button)
 
+        # Ajustar interfaz si el hash es manual o no está disponible
         if self.raw_hash == "N/A":
             self.approve_button.label = "🔑 Banear Hash Manual"
             self.approve_button.style = discord.ButtonStyle.grey
+
+    def extract_info_from_embed(self, embed):
+        filename = "descarga_manual.exe"
+        raw_hash = "N/A"
+        cheat_name = "Cheat"
+
+        if embed.title:
+            title = embed.title
+            if "Análisis:" in title:
+                cheat_name = title.split("Análisis:")[-1].strip()
+            elif "Encontrado para" in title:
+                match = re.search(r"'(.*?)'", title)
+                if match:
+                    cheat_name = match.group(1)
+            elif "relacionado con" in title:
+                match = re.search(r"'(.*?)'", title)
+                if match:
+                    cheat_name = match.group(1)
+            elif "Detectado:" in title:
+                cheat_name = title.split("Detectado:")[-1].strip()
+            elif "Posible cheat" in title:
+                cheat_name = title.split("relacionado con")[-1].replace("'", "").strip()
+
+        for field in embed.fields:
+            name_lower = field.name.lower()
+            if "hash" in name_lower:
+                raw_hash = field.value.replace("`", "").strip()
+            elif "archivo" in name_lower or "compilado" in name_lower:
+                filename = field.value.strip()
+
+        return filename, raw_hash, cheat_name
 
     async def approve_callback(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("🚫 Permisos insuficientes.", ephemeral=True)
             return
-        if self.raw_hash == "N/A":
-            modal = ManualHashBanModal(self.cheat_name)
+
+        embed = interaction.message.embeds[0]
+        filename, raw_hash, cheat_name = self.extract_info_from_embed(embed)
+        
+        # Ajustar dinámicamente el estilo si es un hash manual
+        if raw_hash == "N/A":
+            modal = ManualHashBanModal(cheat_name)
             await interaction.response.send_modal(modal)
             return
+
         await interaction.response.defer(ephemeral=False)
-        success = await upload_hash_to_firebase_async(self.raw_hash, self.filename, uploaded_by=interaction.user.name)
+        success = await upload_hash_to_firebase_async(raw_hash, filename, uploaded_by=interaction.user.name)
         if success:
-            embed = interaction.message.embeds[0]
             embed.title = "🛡️ Cheat Baneado"
             embed.color = discord.Color.green()
             embed.add_field(name="Estado", value=f"✅ Baneado por {interaction.user.mention}", inline=False)
@@ -356,7 +436,14 @@ class CheatApprovalView(discord.ui.View):
             await interaction.followup.send("❌ Error al subir el hash.", ephemeral=True)
 
     async def teach_callback(self, interaction: discord.Interaction):
-        modal = CheatRegistrationModal(default_name=self.cheat_name)
+        embed = interaction.message.embeds[0]
+        filename, raw_hash, cheat_name = self.extract_info_from_embed(embed)
+        
+        modal = CheatRegistrationModal(
+            default_name=cheat_name,
+            file_hash=None if raw_hash == "N/A" else raw_hash,
+            filename=None if raw_hash == "N/A" else filename
+        )
         await interaction.response.send_modal(modal)
 
     async def deny_callback(self, interaction: discord.Interaction):
@@ -377,13 +464,22 @@ class CheatApprovalView(discord.ui.View):
 # MODAL PARA HASH MANUAL
 # ============================================================================
 class ManualHashBanModal(discord.ui.Modal, title="🔑 Banear por Hash Manual"):
-    raw_hash = discord.ui.TextInput(label="Hash SHA-256 Original", placeholder="Introduce el hash (64 caracteres)", max_length=64, min_length=64)
-    cheat_name = discord.ui.TextInput(label="Nombre del Cheat", placeholder="Ej: Midnight", max_length=50)
-
     def __init__(self, default_name: str = ""):
         super().__init__()
-        if default_name:
-            self.cheat_name.default = default_name
+        self.raw_hash = discord.ui.TextInput(
+            label="Hash SHA-256 Original",
+            placeholder="Introduce el hash (64 caracteres)",
+            max_length=64,
+            min_length=64
+        )
+        self.cheat_name = discord.ui.TextInput(
+            label="Nombre del Cheat",
+            placeholder="Ej: Midnight",
+            default=default_name,
+            max_length=50
+        )
+        self.add_item(self.raw_hash)
+        self.add_item(self.cheat_name)
 
     async def on_submit(self, interaction: discord.Interaction):
         sha256_hash = self.raw_hash.value.lower().strip()
@@ -402,7 +498,7 @@ class ManualHashBanModal(discord.ui.Modal, title="🔑 Banear por Hash Manual"):
             await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
 # ============================================================================
-# VISTA PARA REGISTRAR NUEVO CHEAT (BOTÓN)
+# VISTA PARA REGISTRAR NUEVO CHEAT (BOTÓN) - CON PERSISTENCIA REAL
 # ============================================================================
 class RegisterNewCheatOnlyView(discord.ui.View):
     def __init__(self, default_name: str = ""):
@@ -411,7 +507,13 @@ class RegisterNewCheatOnlyView(discord.ui.View):
 
     @discord.ui.button(label="📝 Registrar Cheat", style=discord.ButtonStyle.blurple, custom_id="register_new_only")
     async def register(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = CheatRegistrationModal(default_name=self.default_name)
+        default_name = self.default_name
+        # Si la vista se restauró tras reiniciar, autodetectar el nombre desde el mensaje
+        if not default_name and interaction.message and interaction.message.content:
+            match = re.search(r"'(.*?)'", interaction.message.content)
+            if match:
+                default_name = match.group(1).capitalize()
+        modal = CheatRegistrationModal(default_name=default_name)
         await interaction.response.send_modal(modal)
 
 # ============================================================================
@@ -505,6 +607,7 @@ async def on_message(message):
                     intel = search_cheat_intel(pos_name)
                     if intel['known']:
                         embed = discord.Embed(title=f"🕵️ Análisis: {intel['name']}", description="Archivo binario reconocido.", color=discord.Color.gold())
+                        embed.add_field(name="📂 Archivo Compilado", value=attachment.filename, inline=True)
                         embed.add_field(name="🎮 Juego", value=intel['game'], inline=True)
                         embed.add_field(name="🌐 Web", value=intel['website'], inline=True)
                         embed.add_field(name="🏷️ Tipo", value=intel['type'], inline=True)
@@ -517,6 +620,7 @@ async def on_message(message):
                         bot.add_view(view)
                     else:
                         embed_unknown = discord.Embed(title="⚠️ Archivo desconocido", description=f"No reconozco `{attachment.filename}`.\nSelecciona categoría para registrarlo y subir su hash.", color=discord.Color.orange())
+                        embed_unknown.add_field(name="📂 Archivo Compilado", value=attachment.filename, inline=True)
                         embed_unknown.add_field(name="Hash SHA-256", value=f"`{sha256_hash}`", inline=False)
                         view = CategoriaView(attachment.filename, sha256_hash, attachment.url)
                         await message.channel.send(embed=embed_unknown, view=view)
@@ -539,6 +643,12 @@ async def añadir_manual(ctx):
 @bot.event
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
+    
+    # Registrar las vistas de forma persistente para mantener interacciones tras reiniciar
+    bot.add_view(CheatApprovalView())
+    bot.add_view(CategoriaView())
+    bot.add_view(RegisterNewCheatOnlyView())
+    
     bot.loop.create_task(enviar_estadisticas_semanales())
 
 @bot.command(name="estadisticas", aliases=["stats", "resumen"])
